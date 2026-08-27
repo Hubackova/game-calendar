@@ -892,174 +892,178 @@ function App() {
   };
 
   return (
-    <section className="games">
+    <>
       <header className="header">
-        {/* Ve vysledcich hledani by porovnani slo proti necemu jinemu. */}
-        {view.kind !== "search" && <CompareButton games={games} />}
+        <div className="header-inner">
+          {/* Ve vysledcich hledani by porovnani slo proti necemu jinemu. */}
+          {view.kind !== "search" && <CompareButton games={games} />}
 
-        <div className="period">
-          <select
-            value={year}
-            aria-label="Rok vydání"
-            onChange={(event) => {
-              const picked = Number(event.target.value);
-              setYear(picked);
-              if (view.kind === "month") {
-                setView({ kind: "month", year: picked, month: view.month });
-              } else if (view.kind === "undated") {
-                setView({ kind: "undated", year: picked });
+          <div className="period">
+            <select
+              value={year}
+              aria-label="Rok vydání"
+              onChange={(event) => {
+                const picked = Number(event.target.value);
+                setYear(picked);
+                if (view.kind === "month") {
+                  setView({ kind: "month", year: picked, month: view.month });
+                } else if (view.kind === "undated") {
+                  setView({ kind: "undated", year: picked });
+                }
+              }}
+            >
+              {YEARS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <select
+              value={
+                view.kind === "month"
+                  ? view.month
+                  : view.kind === "undated"
+                    ? "undated"
+                    : ""
               }
-            }}
-          >
-            {YEARS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          <select
-            value={
-              view.kind === "month"
-                ? view.month
-                : view.kind === "undated"
-                  ? "undated"
-                  : ""
-            }
-            aria-label="Měsíc vydání"
-            onChange={(event) => {
-              setInputValue("");
-              selectPeriod(event.target.value);
-            }}
-          >
-            <option value="">Měsíc…</option>
-            {MONTHS.map((name, index) => (
-              <option key={name} value={index + 1}>
-                {name}
-              </option>
-            ))}
-            <option value="undated">bez přesného data (rok / kvartál)</option>
-          </select>
+              aria-label="Měsíc vydání"
+              onChange={(event) => {
+                setInputValue("");
+                selectPeriod(event.target.value);
+              }}
+            >
+              <option value="">Měsíc…</option>
+              {MONTHS.map((name, index) => (
+                <option key={name} value={index + 1}>
+                  {name}
+                </option>
+              ))}
+              <option value="undated">bez data (rok/kvartál)</option>
+            </select>
 
-          {/* Metriky zna jen mesicni vypis, jinde neni podle ceho radit. */}
-          {view.kind !== "upcoming" &&
-            view.kind !== "search" &&
-            metrics.length > 0 && (
-              <select
-                value={metrics.includes(sortBy) ? sortBy : "hypes"}
-                aria-label="Řadit podle"
-                onChange={(event) => setSortBy(event.target.value)}
-              >
-                <option value="hypes">Řadit: IGDB sledující</option>
-                {metrics.map((label) => (
-                  <option key={label} value={label}>
-                    Řadit: {label}
-                  </option>
-                ))}
-              </select>
-            )}
+            {/* Metriky zna jen mesicni vypis, jinde neni podle ceho radit. */}
+            {view.kind !== "upcoming" &&
+              view.kind !== "search" &&
+              metrics.length > 0 && (
+                <select
+                  value={metrics.includes(sortBy) ? sortBy : "hypes"}
+                  aria-label="Řadit podle"
+                  onChange={(event) => setSortBy(event.target.value)}
+                >
+                  <option value="hypes">Řadit: IGDB sledující</option>
+                  {metrics.map((label) => (
+                    <option key={label} value={label}>
+                      Řadit: {label}
+                    </option>
+                  ))}
+                </select>
+              )}
+          </div>
+
+          <form
+            className="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const term = inputValue.trim();
+              setView(term ? { kind: "search", term } : { kind: "upcoming" });
+            }}
+          >
+            <input
+              type="search"
+              value={inputValue}
+              placeholder="Hledat hru…"
+              aria-label="Hledat hru"
+              onChange={(event) => {
+                setInputValue(event.target.value);
+                // Vymazani inputu vrati vychozi seznam.
+                if (event.target.value === "") setView({ kind: "upcoming" });
+              }}
+            />
+            <button type="submit">Hledat</button>
+          </form>
         </div>
-
-        <form
-          className="search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const term = inputValue.trim();
-            setView(term ? { kind: "search", term } : { kind: "upcoming" });
-          }}
-        >
-          <input
-            type="search"
-            value={inputValue}
-            placeholder="Hledat hru…"
-            aria-label="Hledat hru"
-            onChange={(event) => {
-              setInputValue(event.target.value);
-              // Vymazani inputu vrati vychozi seznam.
-              if (event.target.value === "") setView({ kind: "upcoming" });
-            }}
-          />
-          <button type="submit">Hledat</button>
-        </form>
       </header>
 
-      {loading && <p>Načítám…</p>}
-      {error && <p className="error">{error}</p>}
-      {!loading && !error && games.length === 0 && (
-        <p>Nic nenalezeno — zkus jiný název.</p>
-      )}
+      <section className="games">
+        {loading && <p>Načítám…</p>}
+        {error && <p className="error">{error}</p>}
+        {!loading && !error && games.length === 0 && (
+          <p>Nic nenalezeno — zkus jiný název.</p>
+        )}
 
-      <ul className="game-list">
-        {sortedGames.map((game) => (
-          <li key={game.id} className="game">
-            {game.cover && (
-              <img
-                src={coverUrl(game.cover.image_id)}
-                alt={game.name}
-                width={120}
-              />
-            )}
-            <div className="game-body">
-              <h2>
-                {game.url ? (
-                  <a href={game.url} target="_blank" rel="noreferrer">
-                    {game.name}
-                  </a>
-                ) : (
-                  game.name
-                )}
-                {game.pegi && <span className="pegi">PEGI {game.pegi}</span>}
-                <CoverButton
-                  game={game}
-                  icon="↓"
-                  label="Stáhnout obálku"
-                  action={downloadCover}
+        <ul className="game-list">
+          {sortedGames.map((game) => (
+            <li key={game.id} className="game">
+              {game.cover && (
+                <img
+                  src={coverUrl(game.cover.image_id)}
+                  alt={game.name}
+                  width={120}
                 />
-                <UploadCoverButton game={game} />
-                <NewGameButton game={game} />
-              </h2>
-
-              <p className="meta">
-                {releaseDate(game)}
-                {game.hypes != null && (
-                  <span title="Počet lidí, kteří hru na IGDB sledovali před vydáním">
-                    {" · "}
-                    {game.hypes} IGDB sledujících
-                  </span>
-                )}
-                {game.total_rating != null &&
-                  ` · ${Math.round(game.total_rating)} / 100`}
-                {game.total_rating_count
-                  ? ` (${game.total_rating_count} hodnocení)`
-                  : ""}
-                {game.popularity?.map((place) => (
-                  <span key={place.label} className="popularity">
-                    {place.label} #{place.rank}
-                  </span>
-                ))}
-              </p>
-
-              {game.summary && <p className="summary">{game.summary}</p>}
-
-              <dl className="details">
-                <Detail label="Žánry" value={game.genres} />
-                <Detail label="Vývojář" value={game.developers} />
-                <Detail label="Vydavatel" value={game.publishers} />
-                <Detail label="Platformy" value={game.platforms} />
-                <Detail
-                  label="Čeština"
-                  value={game.czech.map(
-                    (type) => LOCALIZATION_LABELS[type] ?? type,
+              )}
+              <div className="game-body">
+                <h2>
+                  {game.url ? (
+                    <a href={game.url} target="_blank" rel="noreferrer">
+                      {game.name}
+                    </a>
+                  ) : (
+                    game.name
                   )}
-                />
-                <Detail label="Typ" value={game.game_type} />
-                <Detail label="Stav" value={game.status} />
-                <Detail label="Součást hry" value={game.parent_game} />
-              </dl>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+                  {game.pegi && <span className="pegi">PEGI {game.pegi}</span>}
+                  <CoverButton
+                    game={game}
+                    icon="↓"
+                    label="Stáhnout obálku"
+                    action={downloadCover}
+                  />
+                  <UploadCoverButton game={game} />
+                  <NewGameButton game={game} />
+                </h2>
+
+                <p className="meta">
+                  {releaseDate(game)}
+                  {game.hypes != null && (
+                    <span title="Počet lidí, kteří hru na IGDB sledovali před vydáním">
+                      {" · "}
+                      {game.hypes} IGDB sledujících
+                    </span>
+                  )}
+                  {game.total_rating != null &&
+                    ` · ${Math.round(game.total_rating)} / 100`}
+                  {game.total_rating_count
+                    ? ` (${game.total_rating_count} hodnocení)`
+                    : ""}
+                  {game.popularity?.map((place) => (
+                    <span key={place.label} className="popularity">
+                      {place.label} #{place.rank}
+                    </span>
+                  ))}
+                </p>
+
+                {game.summary && <p className="summary">{game.summary}</p>}
+
+                <dl className="details">
+                  <Detail label="Žánry" value={game.genres} />
+                  <Detail label="Vývojář" value={game.developers} />
+                  <Detail label="Vydavatel" value={game.publishers} />
+                  <Detail label="Platformy" value={game.platforms} />
+                  <Detail
+                    label="Čeština"
+                    value={game.czech.map(
+                      (type) => LOCALIZATION_LABELS[type] ?? type,
+                    )}
+                  />
+                  <Detail label="Typ" value={game.game_type} />
+                  <Detail label="Stav" value={game.status} />
+                  <Detail label="Součást hry" value={game.parent_game} />
+                </dl>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </>
   );
 }
 

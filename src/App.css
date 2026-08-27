@@ -2,43 +2,35 @@
   max-width: 720px;
   margin: 0 auto;
   padding: 2rem 1rem;
-  font-family: system-ui, sans-serif;
+  text-align: left;
 }
 
+/* Pruh pres celou sirku; obsah drzi stejnou osu jako seznam her. */
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow, none);
+}
+
+.header-inner {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.75rem;
   flex-wrap: wrap;
-  margin-bottom: 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+  /* #root v index.css centruje text, v aplikaci to nechceme. */
+  text-align: left;
 }
 
 .search {
   display: flex;
   gap: 0.5rem;
   margin-left: auto;
-}
-
-.search input {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font: inherit;
-  min-width: 12rem;
-}
-
-.search button {
-  padding: 0.5rem 1rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #f4f4f4;
-  font: inherit;
-  cursor: pointer;
-}
-
-.search button:hover {
-  background: #e8e8e8;
 }
 
 .game-list {
@@ -118,32 +110,6 @@
 .cover-action:disabled {
   cursor: progress;
   opacity: 0.5;
-}
-
-.period {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.period select {
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font: inherit;
-  background: #fff;
-}
-
-.compare {
-  padding: 0.5rem 1rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #f4f4f4;
-  font: inherit;
-  cursor: pointer;
-}
-
-.compare:hover:not(:disabled) {
-  background: #e8e8e8;
 }
 
 .compare:disabled {
@@ -440,4 +406,68 @@
   gap: 0.5rem;
   clear: both;
   margin-top: 1.25rem;
+}
+
+.header-inner input,
+.header-inner select,
+.header-inner button {
+  height: 2.25rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.9rem;
+  /* Bez toho si prohlizec u select/input vnucuje vlastni vzhled. */
+  appearance: none;
+}
+
+.header-inner select {
+  padding: 0 1.6rem 0 0.6rem;
+  cursor: pointer;
+  /* Sipka, kterou `appearance: none` odstranila. */
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 0.75rem center,
+    right 0.5rem center;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+}
+
+.header-inner input {
+  padding: 0 0.7rem;
+  min-width: 12rem;
+}
+
+.header-inner button {
+  padding: 0 0.9rem;
+  background: var(--code-bg);
+  cursor: pointer;
+}
+
+.header-inner button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.header-inner button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.header-inner :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Volby obdobi drzi pohromade jako jedna skupina. */
+.period {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
 }
