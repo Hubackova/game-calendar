@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import type { Game } from "./types";
+import { suggestDescription } from "./gemini";
 import {
   HREJ_COVER_HEIGHT,
   HREJ_COVER_WIDTH,
@@ -289,7 +290,9 @@ function UploadCoverButton({ game }: { game: Game }) {
 }
 
 /** Popisek dohledaneho ciselniku: `Rebel Wolves (2951)` nebo varovani. */
-const refLabel = (found: { term: string; match: { id: number; title: string } | null } | null) => {
+const refLabel = (
+  found: { term: string; match: { id: number; title: string } | null } | null,
+) => {
   if (!found) return "prázdné (IGDB neuvádí)";
   if (!found.match) return `prázdné — „${found.term}“ hrej nezná`;
   return `${found.match.title} (${found.match.id})`;
@@ -308,6 +311,7 @@ function NewGameButton({ game }: { game: Game }) {
   const [created, setCreated] = useState<string | null>(null);
   /** hrej odmita prazdny `text.cs`, popis proto pise clovek tady. */
   const [description, setDescription] = useState("");
+  const [suggesting, setSuggesting] = useState(false);
   /** Zanry navrzene mapovanim, clovek je v modalu upravuje. */
   const [genres, setGenres] = useState<HrejRef[]>([]);
   const [gameType, setGameType] = useState<GameType>("GAME");
@@ -419,15 +423,13 @@ function NewGameButton({ game }: { game: Game }) {
             });
         }}
       >
-        {preview && <img src={preview.url} alt="" width={120} />}
+        {preview && <img src={preview.url} alt="" width={130} />}
         {plan && (
           <dl className="details">
             <Detail label="title" value={plan.payload.title} />
             <Detail
               label="platformIds"
-              value={plan.platforms
-                .map((found) => refLabel(found))
-                .join(", ")}
+              value={plan.platforms.map((found) => refLabel(found)).join(", ")}
             />
             <dt>developerId</dt>
             <dd>
@@ -481,19 +483,13 @@ function NewGameButton({ game }: { game: Game }) {
               label="displayJustReleaseYear"
               value={String(plan.payload.displayJustReleaseYear)}
             />
-            <Detail
-              label="mainImageId"
-              value={`z obálky ${coverName(game)}`}
-            />
+            <Detail label="mainImageId" value={`z obálky ${coverName(game)}`} />
           </dl>
         )}
 
         <div className="game-type">
           <span className="field-label">
-            type{" "}
-            {game.game_type && (
-              <>— IGDB uvádí „{game.game_type}“</>
-            )}
+            type {game.game_type && <>— IGDB uvádí „{game.game_type}“</>}
           </span>
           <select
             value={gameType}
@@ -622,7 +618,25 @@ function NewGameButton({ game }: { game: Game }) {
         <label className="description">
           <span className="field-label">
             text.cs — nepovinné, prázdné pole pošle jen{" "}
-            <code>{"text: {}"}</code>
+            <code>{"text: {}"}</code>{" "}
+            <button
+              type="button"
+              className="inline-add"
+              disabled={suggesting}
+              onClick={() => {
+                setSuggesting(true);
+                setMessage(null);
+                suggestDescription(game)
+                  .then(setDescription)
+                  .catch((err: Error) => {
+                    console.error(err);
+                    setMessage(err.message);
+                  })
+                  .finally(() => setSuggesting(false));
+              }}
+            >
+              {suggesting ? "Píšu…" : "Navrhnout přes Gemini"}
+            </button>
           </span>
           <textarea
             value={description}
@@ -790,7 +804,9 @@ function CompareButton({ games }: { games: Game[] }) {
 type View =
   | { kind: "upcoming" }
   | { kind: "search"; term: string }
-  | { kind: "month"; year: number; month: number };
+  | { kind: "month"; year: number; month: number }
+  /** Hry, u kterych IGDB zna jen rok, kvartal nebo nic. */
+  | { kind: "undated"; year: number };
 
 const MONTHS = [
   "leden",
@@ -848,9 +864,11 @@ function App() {
     const url =
       current.kind === "month"
         ? `/api/games?year=${current.year}&month=${current.month}`
-        : current.kind === "search"
-          ? `/api/games?q=${encodeURIComponent(current.term)}`
-          : "/api/games";
+        : current.kind === "undated"
+          ? `/api/games?year=${current.year}&undated=1`
+          : current.kind === "search"
+            ? `/api/games?q=${encodeURIComponent(current.term)}`
+            : "/api/games";
 
     fetch(url)
       .then(async (res) => {
@@ -867,8 +885,11 @@ function App() {
     load(view);
   }, [load, view]);
 
-  const selectMonth = (month: number) =>
+  const selectPeriod = (value: string) => {
+    if (value === "undated") return setView({ kind: "undated", year });
+    const month = Number(value);
     setView(month ? { kind: "month", year, month } : { kind: "upcoming" });
+  };
 
   return (
     <section className="games">
@@ -885,6 +906,8 @@ function App() {
               setYear(picked);
               if (view.kind === "month") {
                 setView({ kind: "month", year: picked, month: view.month });
+              } else if (view.kind === "undated") {
+                setView({ kind: "undated", year: picked });
               }
             }}
           >
@@ -895,11 +918,17 @@ function App() {
             ))}
           </select>
           <select
-            value={view.kind === "month" ? view.month : ""}
+            value={
+              view.kind === "month"
+                ? view.month
+                : view.kind === "undated"
+                  ? "undated"
+                  : ""
+            }
             aria-label="Měsíc vydání"
             onChange={(event) => {
               setInputValue("");
-              selectMonth(Number(event.target.value));
+              selectPeriod(event.target.value);
             }}
           >
             <option value="">Měsíc…</option>
@@ -908,23 +937,26 @@ function App() {
                 {name}
               </option>
             ))}
+            <option value="undated">bez přesného data (rok / kvartál)</option>
           </select>
 
           {/* Metriky zna jen mesicni vypis, jinde neni podle ceho radit. */}
-          {view.kind === "month" && metrics.length > 0 && (
-            <select
-              value={metrics.includes(sortBy) ? sortBy : "hypes"}
-              aria-label="Řadit podle"
-              onChange={(event) => setSortBy(event.target.value)}
-            >
-              <option value="hypes">Řadit: want hlasy</option>
-              {metrics.map((label) => (
-                <option key={label} value={label}>
-                  Řadit: {label}
-                </option>
-              ))}
-            </select>
-          )}
+          {view.kind !== "upcoming" &&
+            view.kind !== "search" &&
+            metrics.length > 0 && (
+              <select
+                value={metrics.includes(sortBy) ? sortBy : "hypes"}
+                aria-label="Řadit podle"
+                onChange={(event) => setSortBy(event.target.value)}
+              >
+                <option value="hypes">Řadit: IGDB sledující</option>
+                {metrics.map((label) => (
+                  <option key={label} value={label}>
+                    Řadit: {label}
+                  </option>
+                ))}
+              </select>
+            )}
         </div>
 
         <form
@@ -988,7 +1020,12 @@ function App() {
 
               <p className="meta">
                 {releaseDate(game)}
-                {game.hypes != null && ` · ${game.hypes}× want`}
+                {game.hypes != null && (
+                  <span title="Počet lidí, kteří hru na IGDB sledovali před vydáním">
+                    {" · "}
+                    {game.hypes} IGDB sledujících
+                  </span>
+                )}
                 {game.total_rating != null &&
                   ` · ${Math.round(game.total_rating)} / 100`}
                 {game.total_rating_count

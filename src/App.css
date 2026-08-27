@@ -151,32 +151,6 @@
   opacity: 0.6;
 }
 
-.compare-result {
-  max-width: 40rem;
-  width: 90vw;
-}
-
-.mismatches {
-  margin: 1rem 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  max-height: 50vh;
-  overflow-y: auto;
-}
-
-.mismatches li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #eee;
-  border-radius: 6px;
-}
-
 .mismatches button {
   flex-shrink: 0;
   padding: 0.35rem 0.75rem;
@@ -190,34 +164,6 @@
 .mismatches button:disabled {
   cursor: default;
   opacity: 0.6;
-}
-
-.confirm {
-  max-width: 32rem;
-  padding: 1.25rem;
-  border: none;
-  border-radius: 10px;
-  font-family: inherit;
-  box-shadow: 0 10px 40px rgb(0 0 0 / 0.25);
-}
-
-.confirm::backdrop {
-  background: rgb(0 0 0 / 0.4);
-}
-
-.confirm h3 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-}
-
-.confirm img {
-  float: right;
-  margin: 0 0 0.5rem 1rem;
-  border-radius: 6px;
-}
-
-.confirm .details {
-  margin: 0;
 }
 
 .inline-add {
@@ -246,10 +192,6 @@
   font: inherit;
 }
 
-.parent-search {
-  margin-top: 0.75rem;
-}
-
 .parent-input {
   display: flex;
   gap: 0.5rem;
@@ -272,16 +214,6 @@
   cursor: pointer;
 }
 
-.parent-results {
-  margin: 0.5rem 0 0;
-  padding: 0;
-  list-style: none;
-  max-height: 11rem;
-  overflow-y: auto;
-  border: 1px solid #eee;
-  border-radius: 6px;
-}
-
 .parent-results li + li {
   border-top: 1px solid #eee;
 }
@@ -299,15 +231,6 @@
 
 .parent-results button:hover {
   background: #f4f4f4;
-}
-
-.description,
-.game-type,
-.genres {
-  display: block;
-  clear: both;
-  margin-top: 1rem;
-  font-size: 0.85rem;
 }
 
 .field-label {
@@ -372,14 +295,6 @@
   resize: vertical;
 }
 
-.confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  clear: both;
-  margin-top: 1.25rem;
-}
-
 .confirm-actions button {
   padding: 0.45rem 1rem;
   border: 1px solid #ccc;
@@ -440,4 +355,89 @@
 
 .error {
   color: #c0392b;
+}
+
+.compare-result {
+  max-width: 40rem;
+  width: 90vw;
+}
+
+.mismatches {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.mismatches li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #eee;
+  border-radius: 6px;
+}
+
+.confirm {
+  max-width: 32rem;
+  padding: 1.25rem;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.25);
+}
+
+.confirm::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+.confirm h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.confirm img {
+  float: right;
+  margin: 0 0 0.5rem 1rem;
+  border-radius: 6px;
+}
+
+.confirm .details {
+  margin: 0;
+}
+
+.description,
+.game-type,
+.genres {
+  display: block;
+  clear: both;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+
+.parent-search {
+  margin-top: 0.75rem;
+}
+
+.parent-results {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 11rem;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 6px;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  clear: both;
+  margin-top: 1.25rem;
 }

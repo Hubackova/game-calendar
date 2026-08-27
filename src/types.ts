@@ -4,7 +4,7 @@ export type Game = {
   slug?: string;
   url?: string;
   summary?: string;
-  /** Pocet "want" hlasu pred vydanim. */
+  /** Pocet lidi, kteri hru sledovali pred vydanim (IGDB `hypes`). */
   hypes?: number;
   first_release_date?: number;
   /** Presnost data z IGDB: 0 = den, 1 = mesic, 2 = rok, 3-6 = Q1-Q4, 7 = TBD. */

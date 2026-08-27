@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 const TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 const IGDB_URL = "https://api.igdb.com/v4";
 
-/** Minimalni pocet "want" hlasu (v IGDB je to pole `hypes`). */
+/** Minimalni pocet sledujicich pred vydanim (v IGDB je to pole `hypes`). */
 const MIN_HYPES = 30;
 /** IGDB nevrati vic nez 500 zaznamu na jeden dotaz. */
 const PAGE_SIZE = 500;
@@ -14,10 +14,10 @@ const MAX_RESULTS = 5000;
 /**
  * Popularitni metriky z /popularity_types, kterymi doplnujeme `hypes`.
  * Typy 3, 4, 5 a 9 (Playing, Played, 24hr Peak Players, Global Top Sellers)
- * jsou u nevydanych her prazdne, takze nemaji smysl.
+ * jsou u nevydanych her prazdne, takze nemaji smysl. Typ 2 (Want to Play)
+ * tu nema misto — radi hry skoro identicky jako `hypes` (Spearman 0.93).
  */
 const POPULARITY_METRICS = [
-  { type: 2, label: "IGDB want to play" },
   { type: 10, label: "Steam wishlist" },
   { type: 1, label: "IGDB návštěvy" },
 ];
@@ -189,7 +189,7 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
   }
 
   /**
-   * Vsechny chystane hry s aspon MIN_HYPES "want" hlasy.
+   * Vsechny chystane hry s aspon MIN_HYPES sledujicimi.
    * IGDB vraci max 500 zaznamu na dotaz, takze strankujeme pres offset.
    */
   async function getUpcomingGames(): Promise<unknown[]> {
@@ -213,23 +213,31 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
     return shapeGames(games);
   }
 
-  /**
-   * Nejockavanejsi hry vydavane v danem mesici. Vedle `hypes` se ptame
-   * i na popularitni metriky — `hypes` pokryva jen cast her (v rijnu 2026
-   * 56 ze 160) a mine tituly, ktere lidi sleduji jinde nez na IGDB.
-   */
-  async function getMonthGames(year: number, month: number): Promise<unknown[]> {
-    const start = Math.floor(Date.UTC(year, month - 1, 1) / 1000);
-    const end = Math.floor(Date.UTC(year, month, 1) / 1000);
+  /** Presnosti, ktere patri do konkretniho mesice: den a mesic. */
+  const MONTH_PRECISIONS = [0, 1];
 
-    // Nejdriv jen id a hypes, at nestahujeme vnorena pole pro stovky her.
-    const candidates = (await query(
+  type Candidate = RawGame & { id: number; hypes?: number };
+
+  /** Jen id, hypes a presnost data — vnorena pole by pro stovky her byla drahá. */
+  async function fetchCandidates(
+    from: number,
+    to: number,
+  ): Promise<Candidate[]> {
+    return (await query(
       "games",
-      `fields id, hypes;
-       where first_release_date >= ${start} & first_release_date < ${end};
+      `fields id, hypes, first_release_date, release_dates.date, release_dates.date_format;
+       where first_release_date >= ${from} & first_release_date < ${to};
        sort hypes desc;
        limit 500;`,
-    )) as { id: number; hypes?: number }[];
+    )) as Candidate[];
+  }
+
+  /**
+   * Z kandidatu vybere nejockavanejsi hry. Vedle `hypes` se ptame i na
+   * popularitni metriky — `hypes` pokryva jen cast her (v rijnu 2026 56 ze
+   * 160) a mine tituly, ktere lidi sleduji jinde nez na IGDB.
+   */
+  async function rankGames(candidates: Candidate[]): Promise<unknown[]> {
     if (!candidates.length) return [];
 
     const ids = candidates.map((game) => game.id);
@@ -241,19 +249,22 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
       .forEach((game) => selected.set(game.id, []));
 
     const ranked = await Promise.all(
-      POPULARITY_METRICS.map((metric) =>
-        query(
-          "popularity_primitives",
-          `fields game_id, value;
+      POPULARITY_METRICS.map(
+        (metric) =>
+          query(
+            "popularity_primitives",
+            `fields game_id, value;
            where popularity_type = ${metric.type} & game_id = (${ids});
            sort value desc;
            limit ${TOP_PER_METRIC};`,
-        ) as Promise<{ game_id: number }[]>,
+          ) as Promise<{ game_id: number }[]>,
       ),
     );
 
     ranked.forEach((rows, index) => {
       rows.forEach((row, position) => {
+        // Metriky mohou vratit i hru, ktera do naseho vyberu nepatri.
+        if (!selected.has(row.game_id) && !ids.includes(row.game_id)) return;
         const placements = selected.get(row.game_id) ?? [];
         placements.push({
           label: POPULARITY_METRICS[index].label,
@@ -293,6 +304,44 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
   }
 
   /**
+   * Hry vydavane v danem mesici. Berou se jen ty, u kterych IGDB zna aspon
+   * mesic — u rocni a kvartalni presnosti je timestamp posledni den obdobi,
+   * takze „rok 2026“ i „Q4 2026“ by jinak spadly do prosince.
+   */
+  async function getMonthGames(
+    year: number,
+    month: number,
+  ): Promise<unknown[]> {
+    const start = Math.floor(Date.UTC(year, month - 1, 1) / 1000);
+    const end = Math.floor(Date.UTC(year, month, 1) / 1000);
+    const candidates = await fetchCandidates(start, end);
+
+    return rankGames(
+      candidates.filter((game) => {
+        const precision = datePrecision(game);
+        return precision != null && MONTH_PRECISIONS.includes(precision);
+      }),
+    );
+  }
+
+  /**
+   * Hry, u kterych IGDB zna jen rok, kvartal nebo vubec nic (`TBD`).
+   * Do konkretniho mesice je zaradit nelze, maji proto vlastni vypis.
+   */
+  async function getUndatedGames(year: number): Promise<unknown[]> {
+    const start = Math.floor(Date.UTC(year, 0, 1) / 1000);
+    const end = Math.floor(Date.UTC(year + 1, 0, 1) / 1000);
+    const candidates = await fetchCandidates(start, end);
+
+    return rankGames(
+      candidates.filter((game) => {
+        const precision = datePrecision(game);
+        return precision == null || !MONTH_PRECISIONS.includes(precision);
+      }),
+    );
+  }
+
+  /**
    * Vyhledavani her podle nazvu bez dalsich filtru — hleda i uz vydane hry
    * a tituly pod hranici MIN_HYPES. Pri `search` neumi IGDB `sort`,
    * poradi urcuje relevance.
@@ -329,16 +378,18 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
           const term = url.searchParams.get("q")?.trim();
           const year = Number(url.searchParams.get("year"));
           const month = Number(url.searchParams.get("month"));
-          const hasPeriod =
-            Number.isInteger(year) && month >= 1 && month <= 12;
+          const hasYear = Number.isInteger(year) && year > 0;
+          const undated = url.searchParams.get("undated") === "1";
 
           res.end(
             JSON.stringify(
-              hasPeriod
-                ? await getMonthGames(year, month)
-                : term
-                  ? await searchGames(term)
-                  : await getUpcomingGames(),
+              hasYear && undated
+                ? await getUndatedGames(year)
+                : hasYear && month >= 1 && month <= 12
+                  ? await getMonthGames(year, month)
+                  : term
+                    ? await searchGames(term)
+                    : await getUpcomingGames(),
             ),
           );
         } catch (error) {
@@ -474,7 +525,10 @@ function hrejPlugin(token: string): Plugin {
           for await (const chunk of req) chunks.push(chunk as Buffer);
           const body = Buffer.concat(chunks);
 
-          url.searchParams.set("locale", url.searchParams.get("locale") ?? "cs");
+          url.searchParams.set(
+            "locale",
+            url.searchParams.get("locale") ?? "cs",
+          );
           const upstream = await fetch(
             `${HREJ_API_URL}/${resource}?${url.searchParams}`,
             {
@@ -498,6 +552,130 @@ function hrejPlugin(token: string): Plugin {
   };
 }
 
+const GEMINI_URL =
+  "https://generativelanguage.googleapis.com/v1beta/interactions";
+/** Free tier, a na kratky cesky text s prehledem staci. */
+const GEMINI_MODEL = "gemini-3.6-flash";
+
+const DESCRIPTION_INSTRUCTION = [
+  "Jsi redaktor českého herního magazínu.",
+  "Popiš česky, o čem hra je a jak se hraje: tři až čtyři věty, do 600 znaků.",
+  "Jádrem popisu je hratelnost — žánr vysvětli slovy, co v té hře člověk dělá",
+  "(z čeho je pohled, co ovládá, jaká je náplň hraní), ne jen jeho názvem.",
+  "Zmiň zasazení a téma, pokud je z podkladů poznáš.",
+  "Studio a vydavatele neuváděj, web je zobrazuje zvlášť; stejně tak datum",
+  "vydání a platformy.",
+  "Vycházej výhradně z dodaných údajů — nic si nedomýšlej. Když je podkladů",
+  "málo, napiš kratší popis místo vymýšlení detailů.",
+  "Vrať jen text popisu, bez markdownu, uvozovek a nadpisů.",
+].join(" ");
+
+type GeminiResponse = {
+  status?: string;
+  output_text?: string;
+  steps?: { type?: string; content?: { type?: string; text?: string }[] }[];
+};
+
+/**
+ * Text je v `steps[]` u kroku `model_output` — krok `thought` obsahuje
+ * interni uvazovani a musi se preskocit. `output_text` z dokumentace REST
+ * odpoved nevraci, kontrolujeme ho jen pro pripad, ze se to zmeni.
+ */
+function geminiText(body: GeminiResponse): string {
+  if (body.output_text?.trim()) return body.output_text.trim();
+
+  return (body.steps ?? [])
+    .filter((step) => step.type === "model_output")
+    .flatMap((step) => step.content ?? [])
+    .filter((part) => part.type === "text" && part.text)
+    .map((part) => part.text as string)
+    .join("\n")
+    .trim();
+}
+
+type DescribeRequest = {
+  name?: string;
+  summary?: string;
+  genres?: string[];
+  developers?: string[];
+  publishers?: string[];
+};
+
+/**
+ * Navrh ceskeho popisu hry pres Gemini. Klic zustava na serveru a prompt taky,
+ * aby se ladil na jednom miste.
+ */
+function geminiPlugin(apiKey: string): Plugin {
+  return {
+    name: "gemini-describe",
+    configureServer(server) {
+      server.middlewares.use("/api/describe", async (req, res) => {
+        res.setHeader("Content-Type", "application/json");
+        try {
+          if (req.method !== "POST") {
+            res.statusCode = 405;
+            res.end(JSON.stringify({ error: "Jen POST" }));
+            return;
+          }
+          if (!apiKey) throw new Error("Chybi GEMINI_API_KEY v .env.local");
+
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          const game = JSON.parse(
+            Buffer.concat(chunks).toString() || "{}",
+          ) as DescribeRequest;
+          if (!game.name) throw new Error("Chybi nazev hry");
+
+          const facts = [
+            `Název: ${game.name}`,
+            game.genres?.length ? `Žánry: ${game.genres.join(", ")}` : null,
+            game.developers?.length
+              ? `Vývojář: ${game.developers.join(", ")}`
+              : null,
+            game.publishers?.length
+              ? `Vydavatel: ${game.publishers.join(", ")}`
+              : null,
+            game.summary ? `Anglický popis z IGDB: ${game.summary}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          const upstream = await fetch(GEMINI_URL, {
+            method: "POST",
+            headers: {
+              "x-goog-api-key": apiKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: GEMINI_MODEL,
+              system_instruction: DESCRIPTION_INSTRUCTION,
+              input: facts,
+              generation_config: { temperature: 0.7 },
+            }),
+          });
+
+          const body = await upstream.text();
+          if (!upstream.ok) {
+            throw new Error(`Gemini ${upstream.status}: ${body.slice(0, 400)}`);
+          }
+
+          const parsed = JSON.parse(body) as GeminiResponse;
+          const text = geminiText(parsed);
+          if (!text) {
+            throw new Error(
+              `Gemini nevrátil text (status ${parsed.status}): ${body.slice(0, 300)}`,
+            );
+          }
+          res.end(JSON.stringify({ text }));
+        } catch (error) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: (error as Error).message }));
+        }
+      });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -507,6 +685,7 @@ export default defineConfig(({ mode }) => {
       react(),
       igdbPlugin(env.TWITCH_CLIENT_ID, env.TWITCH_CLIENT_SECRET),
       hrejPlugin(env.HREJ_API_TOKEN),
+      geminiPlugin(env.GEMINI_API_KEY),
     ],
   };
 });
