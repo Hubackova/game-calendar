@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import type { Game } from "./types";
 import { suggestDescription } from "./gemini";
+import { EDITOR_TOOLS } from "./config";
 import {
   HREJ_COVER_HEIGHT,
   HREJ_COVER_WIDTH,
@@ -1463,7 +1464,7 @@ function App() {
       <header className="header">
         <div className="header-inner">
           {/* Ve vysledcich hledani by porovnani slo proti necemu jinemu. */}
-          {view.kind !== "search" && (
+          {EDITOR_TOOLS && view.kind !== "search" && (
             <CompareButton
               games={games}
               period={comparePeriod(view)}
@@ -1619,8 +1620,12 @@ function App() {
                     {game.pegi && (
                       <span className="pegi">PEGI {game.pegi}</span>
                     )}
-                    <UploadCoverButton game={game} />
-                    <NewGameButton game={game} />
+                    {EDITOR_TOOLS && (
+                      <>
+                        <UploadCoverButton game={game} />
+                        <NewGameButton game={game} />
+                      </>
+                    )}
                   </h2>
 
                   <p className="meta">
