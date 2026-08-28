@@ -774,6 +774,182 @@ function NewGameButton({ game }: { game: Game }) {
   );
 }
 
+const WEEKDAYS = ["po", "út", "st", "čt", "pá", "so", "ne"];
+
+/** Den v mesici, na ktery hra pripada; jen u presneho data. */
+const dayOfMonth = (game: Game) =>
+  game.date_format === 0 && game.first_release_date != null
+    ? new Date(game.first_release_date * 1000).getUTCDate()
+    : null;
+
+/** Jedna hra v policku kalendare — jen obalka, nazev je v tooltipu. */
+function CalendarEntry({
+  game,
+  onOpen,
+}: {
+  game: Game;
+  onOpen: (game: Game) => void;
+}) {
+  return (
+    <li className="cal-game">
+      <button
+        type="button"
+        className="cal-open"
+        title={`${game.name} — ${releaseDate(game)}`}
+        onClick={() => onOpen(game)}
+      >
+        {game.cover ? (
+          <img src={coverUrl(game.cover.image_id)} alt={game.name} width={64} />
+        ) : (
+          // Bez obalky by policko zustalo prazdne, tady nazev smysl ma.
+          <span className="cal-noimg">{game.name}</span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+/** Detail hry po kliknuti v kalendari. */
+function GameDialog({
+  game,
+  onClose,
+}: {
+  game: Game | null;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    if (game) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [game]);
+
+  return (
+    <dialog ref={dialog} className="confirm game-detail" onClose={onClose}>
+      <h3>{game?.name ?? ""}</h3>
+      <div className="confirm-body">
+        {game && (
+          <div className="detail-body">
+            {game.cover && (
+              <img src={coverUrl(game.cover.image_id)} alt="" width={200} />
+            )}
+            <div className="detail-text">
+              <dl className="details">
+                <Detail label="Vydání" value={releaseDate(game)} />
+                <Detail label="Vývojář" value={game.developers} />
+                <Detail label="Vydavatel" value={game.publishers} />
+                <Detail label="Platformy" value={game.platforms} />
+                <Detail label="Žánry" value={game.genres} />
+                <Detail label="PEGI" value={game.pegi} />
+              </dl>
+              {game.summary && <p className="detail-summary">{game.summary}</p>}
+              {game.url && (
+                <p className="detail-link">
+                  <a href={game.url} target="_blank" rel="noreferrer">
+                    Stránka na IGDB
+                  </a>
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="confirm-actions">
+        <button type="button" onClick={onClose}>
+          Zavřít
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
+/**
+ * Mesicni mrizka. Hry s presnym datem sedi ve svem dni, hry se znamym jen
+ * mesicem by na prvniho lhaly, takze maji vlastni pasek pod kalendarem.
+ */
+function CalendarView({
+  games,
+  year,
+  month,
+}: {
+  games: Game[];
+  year: number;
+  month: number;
+}) {
+  const [detail, setDetail] = useState<Game | null>(null);
+  const byDay = new Map<number, Game[]>();
+  const withoutDay: Game[] = [];
+  for (const game of games) {
+    const day = dayOfMonth(game);
+    if (day == null) withoutDay.push(game);
+    else byDay.set(day, [...(byDay.get(day) ?? []), game]);
+  }
+
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  // getUTCDay(): nedele = 0, my chceme pondeli jako prvni sloupec.
+  const firstWeekday =
+    (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+  const today = new Date();
+  const isThisMonth =
+    today.getFullYear() === year && today.getMonth() + 1 === month;
+
+  const cells: (number | null)[] = [
+    ...Array.from({ length: firstWeekday }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  return (
+    <>
+      <div className="calendar">
+        {WEEKDAYS.map((day) => (
+          <div key={day} className="cal-head">
+            {day}
+          </div>
+        ))}
+        {cells.map((day, index) => (
+          <div
+            key={index}
+            className={
+              "cal-day" +
+              (day === null ? " cal-empty" : "") +
+              (isThisMonth && day === today.getDate() ? " cal-today" : "")
+            }
+          >
+            {day !== null && (
+              <>
+                <span className="cal-number">{day}</span>
+                <ul className="cal-games">
+                  {(byDay.get(day) ?? []).map((game) => (
+                    <CalendarEntry
+                      key={game.id}
+                      game={game}
+                      onOpen={setDetail}
+                    />
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {withoutDay.length > 0 && (
+        <div className="cal-loose">
+          <span className="field-label">Bez konkrétního dne</span>
+          <ul className="cal-games">
+            {withoutDay.map((game) => (
+              <CalendarEntry key={game.id} game={game} onOpen={setDetail} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <GameDialog game={detail} onClose={() => setDetail(null)} />
+    </>
+  );
+}
+
 /** Kompaktni pasek cisel v hlavicce vysledku. */
 function Stats({
   items,
@@ -1206,6 +1382,8 @@ function App() {
   const [year, setYear] = useState(CURRENT_YEAR);
   /** "hypes" = poradi ze serveru, jinak nazev popularitni metriky. */
   const [sortBy, setSortBy] = useState("hypes");
+  /** Kalendarni mrizka dava smysl jen nad jednim mesicem. */
+  const [asCalendar, setAsCalendar] = useState(false);
 
   /** Metriky bereme z dat, at je backend muze pridat bez zasahu do UI. */
   const metrics = useMemo(() => {
@@ -1261,10 +1439,23 @@ function App() {
   const selectedYear = hasPeriod(view) ? view.year : year;
 
   const selectPeriod = (value: string) => {
+    // Mimo konkretni mesic nema mrizka co kreslit.
+    if (value !== "" && !Number(value)) setAsCalendar(false);
     if (value === "undated") return setView({ kind: "undated", year });
     if (value === "year") return setView({ kind: "year", year });
     const month = Number(value);
     setView(month ? { kind: "month", year, month } : { kind: "upcoming" });
+  };
+
+  /** Kalendar potrebuje mesic — kdyz zadny neni, vezmeme nejblizsi povoleny. */
+  const toggleCalendar = () => {
+    const next = !asCalendar;
+    setAsCalendar(next);
+    if (next && view.kind !== "month") {
+      const month = selectedYear > CURRENT_YEAR ? 1 : CURRENT_MONTH;
+      setInputValue("");
+      setView({ kind: "month", year: selectedYear, month });
+    }
   };
 
   return (
@@ -1340,6 +1531,15 @@ function App() {
               <option value="undated">bez data (rok/kvartál)</option>
             </select>
 
+            <button
+              type="button"
+              className="view-toggle"
+              aria-pressed={asCalendar}
+              onClick={toggleCalendar}
+            >
+              {asCalendar ? "Seznam" : "Kalendář"}
+            </button>
+
             {/* Metriky zna jen mesicni vypis, jinde neni podle ceho radit. */}
             {view.kind !== "upcoming" &&
               view.kind !== "search" &&
@@ -1383,63 +1583,73 @@ function App() {
         </div>
       </header>
 
-      <section className="games">
+      <section className={asCalendar ? "games games-wide" : "games"}>
         {loading && <p>Načítám…</p>}
         {error && <p className="error">{error}</p>}
         {!loading && !error && games.length === 0 && (
           <p>Nic nenalezeno — zkus jiný název.</p>
         )}
 
-        <ul className="game-list">
-          {sortedGames.map((game) => (
-            <li key={game.id} className="game">
-              {game.cover && (
-                <img
-                  src={coverUrl(game.cover.image_id)}
-                  alt={game.name}
-                  width={180}
-                />
-              )}
-              <div className="game-body">
-                <h2>
-                  {game.url ? (
-                    <a href={game.url} target="_blank" rel="noreferrer">
-                      {game.name}
-                    </a>
-                  ) : (
-                    game.name
-                  )}
-                  {game.pegi && <span className="pegi">PEGI {game.pegi}</span>}
-                  <UploadCoverButton game={game} />
-                  <NewGameButton game={game} />
-                </h2>
+        {asCalendar && view.kind === "month" ? (
+          <CalendarView
+            games={sortedGames}
+            year={view.year}
+            month={view.month}
+          />
+        ) : (
+          <ul className="game-list">
+            {sortedGames.map((game) => (
+              <li key={game.id} className="game">
+                {game.cover && (
+                  <img
+                    src={coverUrl(game.cover.image_id)}
+                    alt={game.name}
+                    width={180}
+                  />
+                )}
+                <div className="game-body">
+                  <h2>
+                    {game.url ? (
+                      <a href={game.url} target="_blank" rel="noreferrer">
+                        {game.name}
+                      </a>
+                    ) : (
+                      game.name
+                    )}
+                    {game.pegi && (
+                      <span className="pegi">PEGI {game.pegi}</span>
+                    )}
+                    <UploadCoverButton game={game} />
+                    <NewGameButton game={game} />
+                  </h2>
 
-                <p className="meta">
-                  {releaseDate(game)}
-                  {game.hypes != null && (
-                    <span title="Počet lidí, kteří hru na IGDB sledovali před vydáním">
-                      {" · "}
-                      {game.hypes} IGDB sledujících
-                    </span>
-                  )}
-                  {game.popularity?.map((place) => (
-                    <span key={place.label} className="popularity">
-                      {place.label} #{place.rank}
-                    </span>
-                  ))}
-                </p>
+                  <p className="meta">
+                    {releaseDate(game)}
+                    {game.hypes != null && (
+                      <span title="Počet lidí, kteří hru na IGDB sledovali před vydáním">
+                        {" · "}
+                        {game.hypes} IGDB sledujících
+                      </span>
+                    )}
+                    {game.popularity?.map((place) => (
+                      <span key={place.label} className="popularity">
+                        {place.label} #{place.rank}
+                      </span>
+                    ))}
+                  </p>
 
-                {game.summary && <p className="summary">{game.summary}</p>}
+                  {game.summary && <p className="summary">{game.summary}</p>}
 
-                <dl className="details">
-                  <Detail label="Žánry" value={game.genres} />
-                  <Detail label="Vývojář" value={game.developers} />
-                  <Detail label="Platformy" value={game.platforms} />
-                </dl>
-              </div>
-            </li>
-          ))}
-        </ul>
+                  <dl className="details">
+                    <Detail label="Žánry" value={game.genres} />
+                    <Detail label="Vývojář" value={game.developers} />
+                    <Detail label="Platformy" value={game.platforms} />
+                  </dl>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </>
   );
