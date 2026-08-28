@@ -324,6 +324,20 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
     );
   }
 
+  /** Cely rok — stejny filtr na presnost jako u mesice. */
+  async function getYearGames(year: number): Promise<unknown[]> {
+    const start = Math.floor(Date.UTC(year, 0, 1) / 1000);
+    const end = Math.floor(Date.UTC(year + 1, 0, 1) / 1000);
+    const candidates = await fetchCandidates(start, end);
+
+    return rankGames(
+      candidates.filter((game) => {
+        const precision = datePrecision(game);
+        return precision != null && MONTH_PRECISIONS.includes(precision);
+      }),
+    );
+  }
+
   /**
    * Hry, u kterych IGDB zna jen rok, kvartal nebo vubec nic (`TBD`).
    * Do konkretniho mesice je zaradit nelze, maji proto vlastni vypis.
@@ -380,16 +394,19 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
           const month = Number(url.searchParams.get("month"));
           const hasYear = Number.isInteger(year) && year > 0;
           const undated = url.searchParams.get("undated") === "1";
+          const wholeYear = url.searchParams.get("whole") === "1";
 
           res.end(
             JSON.stringify(
               hasYear && undated
                 ? await getUndatedGames(year)
-                : hasYear && month >= 1 && month <= 12
-                  ? await getMonthGames(year, month)
-                  : term
-                    ? await searchGames(term)
-                    : await getUpcomingGames(),
+                : hasYear && wholeYear
+                  ? await getYearGames(year)
+                  : hasYear && month >= 1 && month <= 12
+                    ? await getMonthGames(year, month)
+                    : term
+                      ? await searchGames(term)
+                      : await getUpcomingGames(),
             ),
           );
         } catch (error) {
@@ -417,7 +434,7 @@ const HREJ_RESOURCES = new Set([
 const isAllowedResource = (resource: string) =>
   HREJ_RESOURCES.has(resource) || /^images\/\d+$/.test(resource);
 
-/** Odpoved hreje posleme klientovi; chybu zabalime, aby mel co zobrazit. */
+/** Odpoved Hrej posleme klientovi; chybu zabalime, aby mel co zobrazit. */
 async function pipeUpstream(
   upstream: Response,
   res: { statusCode: number; end: (chunk: string) => void },
@@ -428,7 +445,7 @@ async function pipeUpstream(
     upstream.ok
       ? body
       : JSON.stringify({
-          error: `hrej.cz ${upstream.status}: ${body.slice(0, 500)}`,
+          error: `Hrej ${upstream.status}: ${body.slice(0, 500)}`,
         }),
   );
 }

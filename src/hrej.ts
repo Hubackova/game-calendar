@@ -1,4 +1,5 @@
 import type { Game } from "./types";
+import { searchIgdbGames } from "./igdb";
 
 /**
  * Rozmery pro hrej.cz ve 2x, tedy 497x704 na retinu.
@@ -89,7 +90,7 @@ export async function uploadCover(game: Game, blob: Blob): Promise<number> {
   const id = data.id;
   if (typeof id !== "number") {
     throw new Error(
-      `Odpověď hreje neobsahuje id obrázku: ${JSON.stringify(data).slice(0, 200)}`,
+      `Odpověď Hrej neobsahuje id obrázku: ${JSON.stringify(data).slice(0, 200)}`,
     );
   }
   return id;
@@ -287,19 +288,48 @@ const DLC_TYPES = /dlc|expansion|add-?on|pack|episode|season/i;
 export const guessGameType = (game: Game): GameType =>
   DLC_TYPES.test(game.game_type ?? "") ? "DLC" : "GAME";
 
+/** Naseptavac firem v hrej ciselniku — at nezakladame duplikat. */
+export async function searchCompanies(
+  role: "developer" | "publisher",
+  title: string,
+): Promise<HrejRef[]> {
+  const resource = role === "developer" ? "game-developers" : "game-publishers";
+  const params = new URLSearchParams({
+    limit: "10",
+    offset: "0",
+    title,
+    locale: "cs",
+  });
+  const data = await unwrap(await fetch(`/api/hrej/${resource}?${params}`));
+
+  return (Array.isArray(data) ? data : [])
+    .map(normalizeRef)
+    .filter((item): item is HrejRef => item !== null);
+}
+
 /**
- * Zalozi vyvojare v hrej ciselniku. Jedine povinne pole je `title` —
- * overeno prazdnym POSTem, ktery si stezoval jen na nej.
+ * Zalozi vyvojare nebo vydavatele v hrej ciselniku. Jedine povinne pole je
+ * `title` — overeno prazdnym POSTem, ktery si u obou stezoval jen na nej.
  */
-export async function createDeveloper(title: string): Promise<HrejRef> {
-  const response = await fetch("/api/hrej/game-developers", {
+export async function createCompany(
+  role: "developer" | "publisher",
+  title: string,
+): Promise<HrejRef> {
+  const resource = role === "developer" ? "game-developers" : "game-publishers";
+  const response = await fetch(`/api/hrej/${resource}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title }),
   });
 
   const created = normalizeRef(await unwrap(response));
-  if (!created) throw new Error("hrej nevrátil id nového vývojáře");
+  if (!created) {
+    throw new Error(
+      role === "developer"
+        ? "Hrej nevrátil id nového vývojáře"
+        : "Hrej nevrátil id nového vydavatele",
+    );
+  }
   return created;
 }
 
@@ -354,6 +384,60 @@ export type GamePayload = {
   vetos: never[];
 };
 
+export type ExistingCheck = {
+  /** Jednoznacna shoda nazvu — zakladat znovu by delalo duplikat. */
+  exact: HrejGame | null;
+  /** Podobne nazvy, at se pozna „Phantom Blade 0“ vs. „Phantom Blade Zero“. */
+  similar: HrejGame[];
+};
+
+/**
+ * Zjisti, jestli hra na hreji uz neni. Vedle presne shody vraci i podobne
+ * zaznamy — presna shoda casto selze na drobnem rozdilu v nazvu, a prave
+ * tehdy vznika duplikat.
+ */
+async function findExisting(game: Game): Promise<ExistingCheck> {
+  const wanted = normalizeTitle(game.name);
+  const year = game.first_release_date
+    ? new Date(game.first_release_date * 1000).getUTCFullYear()
+    : undefined;
+
+  /*
+   * Hrej hleda na cely retezec, takze „Phantom Blade 0“ nevrati nic, i kdyz
+   * ma „Phantom Blade Zero“. Kdyz nic nenajdeme, zkusime nazev bez posledniho
+   * slova — prave tam se cislo nebo podtitul lisi nejcasteji.
+   */
+  const shortened = game.name.trim().replace(/\s+\S+$/, "");
+  const queries = [
+    game.name,
+    toArabic(game.name),
+    shortened.includes(" ") ? shortened : "",
+  ].filter((query, index, all) => query && all.indexOf(query) === index);
+
+  const found: HrejGame[] = [];
+  for (const query of queries) {
+    found.push(...(await searchHrejGames(query)));
+    if (found.length) break;
+  }
+
+  const matching = found.filter(
+    (item) => item.title && normalizeTitle(item.title) === wanted,
+  );
+  const exact =
+    matching.length === 1
+      ? matching[0]
+      : (matching.find(
+          (item) =>
+            item.title.includes(`(${year})`) ||
+            item.releaseDate?.startsWith(String(year)),
+        ) ?? null);
+
+  return {
+    exact,
+    similar: found.filter((item) => item.id !== exact?.id).slice(0, 5),
+  };
+}
+
 export type GamePlan = {
   /** Payload bez `mainImageId` — to vznikne az nahranim obalky. */
   payload: Omit<GamePayload, "mainImageId">;
@@ -363,6 +447,8 @@ export type GamePlan = {
   publisher: { term: string; match: HrejRef | null } | null;
   /** Navrzene zanry a cely ciselnik, aby sly v modalu upravit. */
   genres: { suggested: HrejRef[]; catalogue: HrejRef[] };
+  /** Je hra na hreji uz zalozena? */
+  existing: ExistingCheck;
 };
 
 /**
@@ -376,12 +462,13 @@ export async function planGame(game: Game): Promise<GamePlan> {
   const developerTerm = game.developers[0];
   const publisherTerm = game.publishers[0];
 
-  const [platformMatches, developerMatch, publisherMatch, catalogue] =
+  const [platformMatches, developerMatch, publisherMatch, catalogue, existing] =
     await Promise.all([
       Promise.all(platformTerms.map((term) => lookup("game-platforms", term))),
       developerTerm ? lookup("game-developers", developerTerm) : null,
       publisherTerm ? lookup("game-publishers", publisherTerm) : null,
       fetchGenres(),
+      findExisting(game),
     ]);
 
   const release = releaseDatePlan(game);
@@ -389,12 +476,17 @@ export async function planGame(game: Game): Promise<GamePlan> {
 
   return {
     genres: { suggested, catalogue },
+    existing,
     platforms: platformTerms.map((term, index) => ({
       term,
       match: platformMatches[index],
     })),
-    developer: developerTerm ? { term: developerTerm, match: developerMatch } : null,
-    publisher: publisherTerm ? { term: publisherTerm, match: publisherMatch } : null,
+    developer: developerTerm
+      ? { term: developerTerm, match: developerMatch }
+      : null,
+    publisher: publisherTerm
+      ? { term: publisherTerm, match: publisherMatch }
+      : null,
     payload: {
       title: game.name,
       // Popis je nepovinny a doplnuje se rucne v modalu; IGDB `summary`
@@ -473,10 +565,8 @@ const ROMAN: Record<string, number> = {
  * "Mega Man X" by se stal "Mega Man 10".
  */
 const toArabic = (title: string) =>
-  title.replace(
-    /\s+([IVXivx]{2,})$/,
-    (match, numeral: string) =>
-      ROMAN[numeral.toLowerCase()] ? ` ${ROMAN[numeral.toLowerCase()]}` : match,
+  title.replace(/\s+([IVXivx]{2,})$/, (match, numeral: string) =>
+    ROMAN[numeral.toLowerCase()] ? ` ${ROMAN[numeral.toLowerCase()]}` : match,
   );
 
 /** Hrej rozlisuje stejnojmenne hry rokem: "Fable (2027)". */
@@ -494,11 +584,26 @@ async function searchHrejGames(title: string): Promise<HrejGame[]> {
   return (Array.isArray(data) ? data : []) as HrejGame[];
 }
 
+/** Hledani her na Hrej pro rucni overeni — jen ke zobrazeni, nic se nepari. */
+export async function searchHrejGamesByTitle(
+  title: string,
+): Promise<HrejGame[]> {
+  return (await searchHrejGames(title)).slice(0, 10);
+}
+
 /**
- * Najde hru na hreji podle nazvu. Shoda musi byt jednoznacna — spatne
- * sparovana hra by vedla k prepsani data u ciziho zaznamu, takze pri vic
- * kandidatech rozhoduje jedine rok vydani a jinak radeji nevratime nic.
+ * Stejny nazev jeste neznamena stejnou hru: Hrej ma „Ecstatica II“ z roku 1997,
+ * IGDB remake z 2026. Bez teto kontroly by Opravit prepsalo datum puvodni hre.
+ * Rozdil jednoho roku tolerujeme — vydani se casto posouva pres Novy rok.
  */
+function plausibleMatch(item: HrejGame, year?: number): boolean {
+  const hrejYear = Number(item.releaseDate?.slice(0, 4));
+  // Zaznam bez data je v poradku, prave ten chceme doplnit.
+  if (!Number.isFinite(hrejYear)) return true;
+  if (year == null) return true;
+  return Math.abs(hrejYear - year) <= 1;
+}
+
 export async function findHrejGame(
   title: string,
   year?: number,
@@ -513,20 +618,25 @@ export async function findHrejGame(
     const candidates = (await searchHrejGames(query)).filter(
       (item) => item.title && normalizeTitle(item.title) === wanted,
     );
-    if (candidates.length === 1) return candidates[0];
+    if (candidates.length === 1) {
+      return plausibleMatch(candidates[0], year) ? candidates[0] : null;
+    }
     if (candidates.length > 1) {
-      return (
-        candidates.find(
-          (item) =>
-            item.title.includes(`(${year})`) ||
-            item.releaseDate?.startsWith(String(year)),
-        ) ?? null
+      const byYear = candidates.find(
+        (item) =>
+          item.title.includes(`(${year})`) ||
+          item.releaseDate?.startsWith(String(year)),
       );
+      return byYear ?? null;
     }
   }
 
   return null;
 }
+
+/** Verejna adresa zaznamu na hreji. */
+export const hrejGameUrl = (coolUrl?: string) =>
+  coolUrl ? `https://hrej.cz/game/${coolUrl}` : undefined;
 
 export type DateCheck = {
   game: Game;
@@ -542,12 +652,19 @@ export type DateCheck = {
 export async function compareReleaseDates(
   games: Game[],
   onProgress?: (done: number, total: number) => void,
-): Promise<{ mismatched: DateCheck[]; missing: Game[]; checked: number }> {
+): Promise<{
+  mismatched: DateCheck[];
+  missing: Game[];
+  checked: number;
+  /** Dotazy, ktere selhaly — bez toho by hra vypadala jako neznama. */
+  failed: number;
+}> {
   const exact = games.filter(
     (game) => game.date_format === 0 && game.first_release_date != null,
   );
   const mismatched: DateCheck[] = [];
   const missing: Game[] = [];
+  let failed = 0;
   let done = 0;
 
   for (let start = 0; start < exact.length; start += 5) {
@@ -557,14 +674,18 @@ export async function compareReleaseDates(
         findHrejGame(
           game.name,
           new Date((game.first_release_date ?? 0) * 1000).getUTCFullYear(),
-        ).catch(() => null),
+        ).catch(() => {
+          failed += 1;
+          return undefined;
+        }),
       ),
     );
 
     batch.forEach((game, index) => {
       const hrej = found[index];
       const igdbDate = releaseDatePlan(game)?.releaseDate;
-      if (!igdbDate) return;
+      // `undefined` = dotaz selhal, `null` = hrej hru nezna.
+      if (!igdbDate || hrej === undefined) return;
 
       if (!hrej) missing.push(game);
       else if (day(hrej.releaseDate) !== day(igdbDate)) {
@@ -576,7 +697,7 @@ export async function compareReleaseDates(
     onProgress?.(done, exact.length);
   }
 
-  return { mismatched, missing, checked: exact.length };
+  return { mismatched, missing, checked: exact.length, failed };
 }
 
 /**
@@ -588,7 +709,7 @@ export async function updateReleaseDate(
   hrej: HrejGame,
   releaseDate: string,
 ): Promise<void> {
-  const related = <T,>(value: unknown) => (value ?? []) as { id: T }[];
+  const related = <T>(value: unknown) => (value ?? []) as { id: T }[];
 
   const payload = {
     ...hrej,
@@ -659,6 +780,7 @@ export async function createGame(
     type: GameType;
     parentGameId: number | null;
     developerId: number | null;
+    publisherId: number | null;
   },
 ): Promise<CreatedGame> {
   if (edits.type === "DLC" && !edits.parentGameId) {
@@ -676,6 +798,7 @@ export async function createGame(
       text: edits.description ? { cs: edits.description } : {},
       genreIds: edits.genreIds,
       developerId: edits.developerId,
+      publisherId: edits.publisherId,
       type: edits.type,
       parentGameId: edits.type === "DLC" ? edits.parentGameId : null,
       mainImageId,
@@ -684,7 +807,10 @@ export async function createGame(
 
   const created = (await unwrap(response)) as CreatedGame;
   if (!created.id) {
-    return { ...created, imageWarning: "Hra nevrátila id, obrázek zůstal bez vazby" };
+    return {
+      ...created,
+      imageWarning: "Hra nevrátila id, obrázek zůstal bez vazby",
+    };
   }
 
   try {
@@ -694,4 +820,143 @@ export async function createGame(
     // Hra uz existuje, takze to neni duvod cely zapis oznacit za neuspesny.
     return { ...created, imageWarning: (error as Error).message };
   }
+}
+
+/**
+ * Chystane hry z Hrej. Sestupne razeni podle data da budouci hry na zacatek,
+ * takze staci strankovat, dokud se nedostaneme do minulosti.
+ */
+/** Obdobi ve dnech; `to` je vylucne. `null` = od dneska dal. */
+export type Period = { from: string; to: string } | null;
+
+/**
+ * Hry z Hrej v danem obdobi. Sestupne razeni podle data znamena, ze stacime
+ * strankovat, dokud se nedostaneme pod spodni hranici.
+ */
+async function fetchHrejGamesInPeriod(period: Period): Promise<HrejGame[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const lowerBound = period ? period.from : today;
+  const games: HrejGame[] = [];
+
+  for (let offset = 0; offset < 2000; offset += 100) {
+    const params = new URLSearchParams({
+      limit: "100",
+      offset: String(offset),
+      sort: "-releaseDate",
+      locale: "cs",
+    });
+    const data = await unwrap(await fetch(`/api/hrej/games?${params}`));
+    const page = (Array.isArray(data) ? data : []) as HrejGame[];
+    if (!page.length) break;
+
+    games.push(
+      ...page.filter((game) => {
+        const date = day(game.releaseDate) ?? "";
+        if (!date) return false;
+        return period ? date >= period.from && date < period.to : date > today;
+      }),
+    );
+
+    // Posledni hra na strance je uz pod hranici, dal nema smysl chodit.
+    if ((day(page[page.length - 1].releaseDate) ?? "") < lowerBound) break;
+  }
+
+  return games;
+}
+
+/**
+ * Opacny pruch: bere chystane hry z hreje a hleda je v IGDB. Odhali i hry,
+ * ktere v nasem vypisu nejsou (napr. pod hranici sledujicich), takze by je
+ * porovnani od IGDB minulo.
+ */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * IGDB pousti ctyri dotazy za sekundu. Pri stovkach hledani se limit projevi
+ * a bez opakovani by kazde odmitnuti vypadalo jako „hru neznam“.
+ */
+async function searchIgdbWithRetry(title: string): Promise<Game[] | null> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await searchIgdbGames(title);
+    } catch {
+      await sleep(400 * (attempt + 1));
+    }
+  }
+  return null;
+}
+
+export async function compareHrejCalendar(
+  onProgress?: (done: number, total: number) => void,
+  period: Period = null,
+): Promise<{
+  mismatched: DateCheck[];
+  checked: number;
+  unmatched: number;
+  failed: number;
+}> {
+  const upcoming = await fetchHrejGamesInPeriod(period);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const mismatched: DateCheck[] = [];
+  let unmatched = 0;
+  let failed = 0;
+  let done = 0;
+
+  /*
+   * IGDB pousti ctyri dotazy za sekundu, takze davka ctyr smi trvat nejmene
+   * sekundu. Drzet tempo je rychlejsi nez narazet do limitu a opakovat:
+   * pri kratsi pauze se cely pruchod protahl na dvojnasobek kvuli retry.
+   */
+  for (let start = 0; start < upcoming.length; start += 4) {
+    const batch = upcoming.slice(start, start + 4);
+    const startedAt = Date.now();
+    const found = await Promise.all(
+      batch.map((game) => searchIgdbWithRetry(game.title)),
+    );
+    const remaining = 1050 - (Date.now() - startedAt);
+    if (remaining > 0 && start + 4 < upcoming.length) await sleep(remaining);
+
+    batch.forEach((hrej, index) => {
+      if (found[index] === null) {
+        failed += 1;
+        return;
+      }
+      const wanted = normalizeTitle(hrej.title);
+      /*
+       * Presna shoda nazvu, konkretni den a datum v budoucnosti. Ta posledni
+       * podminka je kriticka: u jednoslovnych nazvu ("Skate", "Judas",
+       * "Hunger") vraci IGDB stejnojmennou starou hru a bez ni bychom
+       * chystanemu titulu nabidli prepsat datum na rok 2007.
+       */
+      const candidates = (found[index] ?? []).filter((game) => {
+        if (normalizeTitle(game.name) !== wanted) return false;
+        if (game.date_format !== 0 || game.first_release_date == null) {
+          return false;
+        }
+        // V ramci obdobi rozhoduje obdobi, jinak musi byt datum v budoucnu.
+        if (period) {
+          const date = new Date(game.first_release_date * 1000)
+            .toISOString()
+            .slice(0, 10);
+          return date >= period.from && date < period.to;
+        }
+        return game.first_release_date > nowSeconds;
+      });
+      // Vic stejnojmennych chystanych her nerozhodneme, radeji nechame byt.
+      const match = candidates.length === 1 ? candidates[0] : undefined;
+      const igdbDate = match ? releaseDatePlan(match)?.releaseDate : undefined;
+      if (!match || !igdbDate) {
+        unmatched += 1;
+        return;
+      }
+      if (day(igdbDate) !== day(hrej.releaseDate)) {
+        mismatched.push({ game: match, igdbDate, hrej });
+      }
+    });
+
+    done += batch.length;
+    onProgress?.(done, upcoming.length);
+  }
+
+  return { mismatched, checked: upcoming.length, unmatched, failed };
 }
