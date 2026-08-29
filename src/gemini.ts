@@ -8,10 +8,10 @@ export async function suggestDescription(game: Game): Promise<string> {
   const response = await fetch("/api/describe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    // Zanry neposilame — ty si ma model urcit sam z popisu a vlastnich znalosti.
     body: JSON.stringify({
       name: game.name,
       summary: game.summary,
-      genres: game.genres,
       developers: game.developers,
       publishers: game.publishers,
     }),

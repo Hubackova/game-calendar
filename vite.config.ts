@@ -366,6 +366,28 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
   }
 
   /**
+   * Konkretni hry podle id — pouziva se pro oblibene, aby se do vypisu
+   * dostaly i tituly, ktere by se do zebricku nevesly.
+   */
+  async function getGamesByIds(raw: string): Promise<unknown[]> {
+    const ids = raw
+      .split(",")
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value) && value > 0)
+      .slice(0, 200);
+    if (!ids.length) return [];
+
+    return shapeGames(
+      (await query(
+        "games",
+        `fields ${GAME_FIELDS};
+         where id = (${ids.join(",")});
+         limit ${ids.length};`,
+      )) as unknown[],
+    );
+  }
+
+  /**
    * Vyhledavani her podle nazvu bez dalsich filtru — hleda i uz vydane hry
    * a tituly pod hranici MIN_HYPES. Pri `search` neumi IGDB `sort`,
    * poradi urcuje relevance.
@@ -403,20 +425,23 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
           const year = Number(url.searchParams.get("year"));
           const month = Number(url.searchParams.get("month"));
           const hasYear = Number.isInteger(year) && year > 0;
+          const ids = url.searchParams.get("ids");
           const undated = url.searchParams.get("undated") === "1";
           const wholeYear = url.searchParams.get("whole") === "1";
 
           res.end(
             JSON.stringify(
-              hasYear && undated
-                ? await getUndatedGames(year)
-                : hasYear && wholeYear
-                  ? await getYearGames(year)
-                  : hasYear && month >= 1 && month <= 12
-                    ? await getMonthGames(year, month)
-                    : term
-                      ? await searchGames(term)
-                      : await getUpcomingGames(),
+              ids
+                ? await getGamesByIds(ids)
+                : hasYear && undated
+                  ? await getUndatedGames(year)
+                  : hasYear && wholeYear
+                    ? await getYearGames(year)
+                    : hasYear && month >= 1 && month <= 12
+                      ? await getMonthGames(year, month)
+                      : term
+                        ? await searchGames(term)
+                        : await getUpcomingGames(),
             ),
           );
         } catch (error) {
@@ -586,14 +611,14 @@ const GEMINI_MODEL = "gemini-3.6-flash";
 
 const DESCRIPTION_INSTRUCTION = [
   "Jsi redaktor českého herního magazínu.",
-  "Napiš česky dvě až tři věty, dohromady do 450 znaků.",
-  "První věta začne názvem hry a řekne, o jaký typ hry jde: žánr popiš",
-  "přirozenou češtinou a doplň, čím je hratelnost specifická — pohled,",
-  "klíčové mechaniky, kombinace žánrů.",
+  "Napiš o hře česky dvě až tři věty, dohromady do 450 znaků.",
+  "Vycházej z dodaných údajů a z toho, co o hře sám víš; nic si nevymýšlej.",
+  "První věta začne názvem hry a řekne, o jaký typ hry jde — žánr urči sám,",
+  "popiš ho přirozenou češtinou a doplň, čím je hratelnost specifická:",
+  "pohled, klíčové mechaniky, kombinace žánrů.",
   "Druhou větu o studiu piš jen tehdy, když k němu umíš dodat konkrétní",
   "kontext (např. jaké známé hry mají jeho lidé za sebou). Když takový",
   "kontext nemáš nebo si jím nejsi jistý, studio i vydavatele vynech úplně.",
-  "Fakta o hře ber z dodaných údajů a nic si k nim nedomýšlej.",
   "Nepiš datum vydání, platformy, hodnocení ani marketingová klišé.",
   "Vrať jen text popisu, bez markdownu, uvozovek a nadpisů.",
 ].join(" ");
@@ -624,7 +649,6 @@ function geminiText(body: GeminiResponse): string {
 type DescribeRequest = {
   name?: string;
   summary?: string;
-  genres?: string[];
   developers?: string[];
   publishers?: string[];
 };
@@ -654,9 +678,9 @@ function geminiPlugin(apiKey: string): Plugin {
           ) as DescribeRequest;
           if (!game.name) throw new Error("Chybi nazev hry");
 
+          // Zanry zamerne neposilame — ma si je urcit model sam.
           const facts = [
             `Název: ${game.name}`,
-            game.genres?.length ? `Žánry: ${game.genres.join(", ")}` : null,
             game.developers?.length
               ? `Vývojář: ${game.developers.join(", ")}`
               : null,

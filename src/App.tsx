@@ -4,6 +4,7 @@ import type { Game } from "./types";
 import { suggestDescription } from "./gemini";
 import { EDITOR_TOOLS } from "./config";
 import { loadFavorites, saveFavorites } from "./favorites";
+import { fetchGamesByIds } from "./igdb";
 import {
   HREJ_COVER_HEIGHT,
   HREJ_COVER_WIDTH,
@@ -1441,6 +1442,8 @@ function App() {
   const [favorites, setFavorites] = useState<Set<number>>(loadFavorites);
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [page, setPage] = useState(1);
+  /** Oblibene hry stazene podle id — nemusi byt v aktualnim vypisu. */
+  const [favoriteGames, setFavoriteGames] = useState<Game[]>([]);
 
   const toggleFavorite = (id: number) =>
     setFavorites((current) => {
@@ -1450,26 +1453,66 @@ function App() {
       return next;
     });
 
+  /**
+   * Patri oblibena hra do prave zobrazeneho obdobi? Kalendar i mesicni vypis
+   * berou jen presnost na den nebo mesic, „bez data“ naopak jen tu hrubsi.
+   */
+  const belongsToView = (game: Game) => {
+    const timestamp = game.first_release_date;
+    if (timestamp == null) return false;
+    const date = new Date(timestamp * 1000);
+    const precise = game.date_format === 0 || game.date_format === 1;
+
+    if (view.kind === "month") {
+      return (
+        precise &&
+        date.getUTCFullYear() === view.year &&
+        date.getUTCMonth() + 1 === view.month
+      );
+    }
+    if (view.kind === "year") {
+      return precise && date.getUTCFullYear() === view.year;
+    }
+    if (view.kind === "undated") {
+      return !precise && date.getUTCFullYear() === view.year;
+    }
+    if (view.kind === "upcoming") return timestamp * 1000 > Date.now();
+    return false;
+  };
+
+  /** Oblibene doplnujeme na konec, aby serverove poradi zustalo netknute. */
+  const listGames = useMemo(
+    () => {
+      const known = new Set(games.map((game) => game.id));
+      const extra = favoriteGames.filter(
+        (game) => !known.has(game.id) && belongsToView(game),
+      );
+      return extra.length ? [...games, ...extra] : games;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [games, favoriteGames, view],
+  );
+
   /** Metriky bereme z dat, at je backend muze pridat bez zasahu do UI. */
   const metrics = useMemo(() => {
     const labels: string[] = [];
-    games.forEach((game) =>
+    listGames.forEach((game) =>
       game.popularity?.forEach((place) => {
         if (!labels.includes(place.label)) labels.push(place.label);
       }),
     );
     return labels;
-  }, [games]);
+  }, [listGames]);
 
   const sortedGames = useMemo(() => {
-    if (!metrics.includes(sortBy)) return games;
+    if (!metrics.includes(sortBy)) return listGames;
     // Hry mimo top 20 dane metriky umisteni nemaji a padaji nakonec.
     const rank = (game: Game) =>
       game.popularity?.find((place) => place.label === sortBy)?.rank ??
       Number.MAX_SAFE_INTEGER;
 
-    return [...games].sort((a, b) => rank(a) - rank(b));
-  }, [games, metrics, sortBy]);
+    return [...listGames].sort((a, b) => rank(a) - rank(b));
+  }, [listGames, metrics, sortBy]);
 
   const load = useCallback((current: View) => {
     setLoading(true);
@@ -1503,6 +1546,19 @@ function App() {
   useEffect(() => {
     setPage(1);
   }, [view, sortBy, onlyFavorites]);
+
+  useEffect(() => {
+    const ids = [...favorites];
+    if (!ids.length) return setFavoriteGames([]);
+
+    let cancelled = false;
+    fetchGamesByIds(ids)
+      .then((loaded) => !cancelled && setFavoriteGames(loaded))
+      .catch((err: Error) => console.error(err));
+    return () => {
+      cancelled = true;
+    };
+  }, [favorites]);
 
   /* Bez zvoleneho obdobi se ridime naposledy vybranym rokem. */
   const selectedYear = hasPeriod(view) ? view.year : year;

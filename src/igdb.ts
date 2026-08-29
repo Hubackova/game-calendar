@@ -7,3 +7,13 @@ export async function searchIgdbGames(term: string): Promise<Game[]> {
   if (!response.ok) throw new Error(body.error ?? response.statusText);
   return body as Game[];
 }
+
+/** Konkretni hry podle IGDB id — pro oblibene, ktere by se do zebricku nevesly. */
+export async function fetchGamesByIds(ids: number[]): Promise<Game[]> {
+  if (!ids.length) return [];
+
+  const response = await fetch(`/api/games?ids=${ids.join(",")}`);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error ?? response.statusText);
+  return body as Game[];
+}
