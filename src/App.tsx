@@ -3,6 +3,7 @@ import "./App.css";
 import type { Game } from "./types";
 import { suggestDescription } from "./gemini";
 import { EDITOR_TOOLS } from "./config";
+import { loadFavorites, saveFavorites } from "./favorites";
 import {
   HREJ_COVER_HEIGHT,
   HREJ_COVER_WIDTH,
@@ -813,9 +814,13 @@ function CalendarEntry({
 /** Detail hry po kliknuti v kalendari. */
 function GameDialog({
   game,
+  favorite,
+  onToggleFavorite,
   onClose,
 }: {
   game: Game | null;
+  favorite: boolean;
+  onToggleFavorite: (id: number) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -827,7 +832,16 @@ function GameDialog({
 
   return (
     <dialog ref={dialog} className="confirm game-detail" onClose={onClose}>
-      <h3>{game?.name ?? ""}</h3>
+      <h3>
+        {game?.name ?? ""}
+        {game && (
+          <FavoriteButton
+            active={favorite}
+            onToggle={() => onToggleFavorite(game.id)}
+            name={game.name}
+          />
+        )}
+      </h3>
       <div className="confirm-body">
         {game && (
           <div className="detail-body">
@@ -872,10 +886,14 @@ function CalendarView({
   games,
   year,
   month,
+  favorites,
+  onToggleFavorite,
 }: {
   games: Game[];
   year: number;
   month: number;
+  favorites: Set<number>;
+  onToggleFavorite: (id: number) => void;
 }) {
   const [detail, setDetail] = useState<Game | null>(null);
   const byDay = new Map<number, Game[]>();
@@ -946,8 +964,39 @@ function CalendarView({
         </div>
       )}
 
-      <GameDialog game={detail} onClose={() => setDetail(null)} />
+      <GameDialog
+        game={detail}
+        favorite={detail ? favorites.has(detail.id) : false}
+        onToggleFavorite={onToggleFavorite}
+        onClose={() => setDetail(null)}
+      />
     </>
+  );
+}
+
+/** Srdicko pro pridani do oblibenych. */
+function FavoriteButton({
+  active,
+  onToggle,
+  name,
+}: {
+  active: boolean;
+  onToggle: () => void;
+  name: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={active ? "fav fav-on" : "fav"}
+      aria-pressed={active}
+      title={active ? "Odebrat z oblíbených" : "Přidat do oblíbených"}
+      aria-label={`${active ? "Odebrat" : "Přidat"} ${name} ${
+        active ? "z oblíbených" : "do oblíbených"
+      }`}
+      onClick={onToggle}
+    >
+      ♥
+    </button>
   );
 }
 
@@ -1368,6 +1417,9 @@ const periodLabel = (view: View) =>
       ? String(view.year)
       : "od dneška dál";
 
+/** Kolik her ukazat na jedne strance seznamu. */
+const PAGE_SIZE = 20;
+
 const CURRENT_YEAR = new Date().getFullYear();
 const CURRENT_MONTH = new Date().getMonth() + 1;
 /* Filtrovat do minulosti nema smysl, kalendar se diva dopredu. */
@@ -1385,6 +1437,18 @@ function App() {
   const [sortBy, setSortBy] = useState("hypes");
   /** Kalendarni mrizka dava smysl jen nad jednim mesicem. */
   const [asCalendar, setAsCalendar] = useState(false);
+  /** Oblibene hry podle IGDB id; drzi se v localStorage. */
+  const [favorites, setFavorites] = useState<Set<number>>(loadFavorites);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const toggleFavorite = (id: number) =>
+    setFavorites((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      saveFavorites(next);
+      return next;
+    });
 
   /** Metriky bereme z dat, at je backend muze pridat bez zasahu do UI. */
   const metrics = useMemo(() => {
@@ -1436,6 +1500,10 @@ function App() {
     load(view);
   }, [load, view]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [view, sortBy, onlyFavorites]);
+
   /* Bez zvoleneho obdobi se ridime naposledy vybranym rokem. */
   const selectedYear = hasPeriod(view) ? view.year : year;
 
@@ -1457,6 +1525,23 @@ function App() {
       setInputValue("");
       setView({ kind: "month", year: selectedYear, month });
     }
+  };
+
+  const shownGames = onlyFavorites
+    ? sortedGames.filter((game) => favorites.has(game.id))
+    : sortedGames;
+
+  const pageCount = Math.max(1, Math.ceil(shownGames.length / PAGE_SIZE));
+  // Po zmene filtru muze byt ulozena stranka mimo rozsah.
+  const currentPage = Math.min(page, pageCount);
+  const pageGames = shownGames.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  const goToPage = (next: number) => {
+    setPage(next);
+    window.scrollTo({ top: 0 });
   };
 
   return (
@@ -1541,6 +1626,15 @@ function App() {
               {asCalendar ? "Seznam" : "Kalendář"}
             </button>
 
+            <button
+              type="button"
+              className="view-toggle"
+              aria-pressed={onlyFavorites}
+              onClick={() => setOnlyFavorites((value) => !value)}
+            >
+              ♥ Jen oblíbené{favorites.size > 0 && ` (${favorites.size})`}
+            </button>
+
             {/* Metriky zna jen mesicni vypis, jinde neni podle ceho radit. */}
             {view.kind !== "upcoming" &&
               view.kind !== "search" &&
@@ -1587,19 +1681,24 @@ function App() {
       <section className={asCalendar ? "games games-wide" : "games"}>
         {loading && <p>Načítám…</p>}
         {error && <p className="error">{error}</p>}
+        {!loading && !error && shownGames.length === 0 && onlyFavorites && (
+          <p>Žádné oblíbené hry v tomto výpisu.</p>
+        )}
         {!loading && !error && games.length === 0 && (
           <p>Nic nenalezeno — zkus jiný název.</p>
         )}
 
         {asCalendar && view.kind === "month" ? (
           <CalendarView
-            games={sortedGames}
+            games={shownGames}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
             year={view.year}
             month={view.month}
           />
         ) : (
           <ul className="game-list">
-            {sortedGames.map((game) => (
+            {pageGames.map((game) => (
               <li key={game.id} className="game">
                 {game.cover && (
                   <img
@@ -1617,9 +1716,11 @@ function App() {
                     ) : (
                       game.name
                     )}
-                    {game.pegi && (
-                      <span className="pegi">PEGI {game.pegi}</span>
-                    )}
+                    <FavoriteButton
+                      active={favorites.has(game.id)}
+                      onToggle={() => toggleFavorite(game.id)}
+                      name={game.name}
+                    />
                     {EDITOR_TOOLS && (
                       <>
                         <UploadCoverButton game={game} />
@@ -1654,6 +1755,28 @@ function App() {
               </li>
             ))}
           </ul>
+        )}
+
+        {!asCalendar && pageCount > 1 && (
+          <nav className="pager" aria-label="Stránkování">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => goToPage(currentPage - 1)}
+            >
+              ← Předchozí
+            </button>
+            <span>
+              {currentPage} / {pageCount}
+            </span>
+            <button
+              type="button"
+              disabled={currentPage === pageCount}
+              onClick={() => goToPage(currentPage + 1)}
+            >
+              Další →
+            </button>
+          </nav>
         )}
       </section>
     </>

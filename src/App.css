@@ -80,6 +80,10 @@
 .game img {
   border-radius: 6px;
   flex-shrink: 0;
+  aspect-ratio: 3 / 4;
+  height: auto;
+  object-fit: cover;
+  background: var(--code-bg);
 }
 
 .game h2 {
@@ -87,6 +91,7 @@
   font-size: 1.1em;
   display: flex;
   gap: 0.5rem;
+  align-items: center;
 }
 
 .meta {
@@ -822,6 +827,10 @@
 
 .cal-game img {
   display: block;
+  aspect-ratio: 3 / 4;
+  height: auto;
+  object-fit: cover;
+  background: var(--code-bg);
   border-radius: 4px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
 }
@@ -961,4 +970,73 @@
     min-width: 1.1rem;
     padding: 0.05rem 0.15rem;
   }
+}
+
+/* ---------- oblibene ---------- */
+
+.fav {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  /* Bez toho zdedi Arial, ktery ma hubene ♥ — chceme stejny tvar jako
+     v prepinaci „Jen oblíbené“, tedy ze system-ui. */
+  font-family: var(--sans);
+  font-size: 1.05em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+}
+
+.fav:hover {
+  opacity: 0.7;
+}
+
+/* Aktivni srdce ma barvu, ne jiny znak — jinak by radek poskocil. */
+.fav-on,
+.fav-on:hover {
+  color: #e0577c;
+  opacity: 1;
+}
+
+.game h2 .fav {
+  margin-left: 0.35rem;
+}
+
+.game-detail h3 .fav {
+  margin-left: 0.5rem;
+  font-size: 1.1rem;
+}
+
+/* ---------- strankovani ---------- */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 2rem;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager button {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--text-h);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pager button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }

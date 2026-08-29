@@ -21,8 +21,11 @@ const POPULARITY_METRICS = [
   { type: 10, label: "Steam wishlist" },
   { type: 1, label: "IGDB návštěvy" },
 ];
-/** Kolik her brat z kazdeho zebricku (vcetne `hypes`). */
-const TOP_PER_METRIC = 20;
+/** Kolik her brat z kazdeho zebricku (vcetne `hypes`) u mesicniho vypisu. */
+const TOP_PER_METRIC = 30;
+/** Rocni vypis je sirsi — bere vic z kazdeho zebricku a orizne se na sto. */
+const YEAR_PER_METRIC = 100;
+const YEAR_LIMIT = 100;
 
 /** IGDB id cestiny v /languages. */
 const CZECH_LANGUAGE_ID = 4;
@@ -237,7 +240,11 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
    * popularitni metriky — `hypes` pokryva jen cast her (v rijnu 2026 56 ze
    * 160) a mine tituly, ktere lidi sleduji jinde nez na IGDB.
    */
-  async function rankGames(candidates: Candidate[]): Promise<unknown[]> {
+  async function rankGames(
+    candidates: Candidate[],
+    perMetric = TOP_PER_METRIC,
+    limit?: number,
+  ): Promise<unknown[]> {
     if (!candidates.length) return [];
 
     const ids = candidates.map((game) => game.id);
@@ -245,7 +252,7 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
     const selected = new Map<number, { label: string; rank: number }[]>();
     candidates
       .filter((game) => game.hypes)
-      .slice(0, TOP_PER_METRIC)
+      .slice(0, perMetric)
       .forEach((game) => selected.set(game.id, []));
 
     const ranked = await Promise.all(
@@ -256,7 +263,7 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
             `fields game_id, value;
            where popularity_type = ${metric.type} & game_id = (${ids});
            sort value desc;
-           limit ${TOP_PER_METRIC};`,
+           limit ${perMetric};`,
           ) as Promise<{ game_id: number }[]>,
       ),
     );
@@ -300,7 +307,8 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
       .sort(
         (a, b) =>
           (b.hypes ?? 0) - (a.hypes ?? 0) || bestRank(a.id) - bestRank(b.id),
-      );
+      )
+      .slice(0, limit ?? Infinity);
   }
 
   /**
@@ -335,6 +343,8 @@ function igdbPlugin(clientId: string, clientSecret: string): Plugin {
         const precision = datePrecision(game);
         return precision != null && MONTH_PRECISIONS.includes(precision);
       }),
+      YEAR_PER_METRIC,
+      YEAR_LIMIT,
     );
   }
 
@@ -576,14 +586,15 @@ const GEMINI_MODEL = "gemini-3.6-flash";
 
 const DESCRIPTION_INSTRUCTION = [
   "Jsi redaktor českého herního magazínu.",
-  "Popiš česky, o čem hra je a jak se hraje: tři až čtyři věty, do 600 znaků.",
-  "Jádrem popisu je hratelnost — žánr vysvětli slovy, co v té hře člověk dělá",
-  "(z čeho je pohled, co ovládá, jaká je náplň hraní), ne jen jeho názvem.",
-  "Zmiň zasazení a téma, pokud je z podkladů poznáš.",
-  "Studio a vydavatele neuváděj, web je zobrazuje zvlášť; stejně tak datum",
-  "vydání a platformy.",
-  "Vycházej výhradně z dodaných údajů — nic si nedomýšlej. Když je podkladů",
-  "málo, napiš kratší popis místo vymýšlení detailů.",
+  "Napiš česky dvě až tři věty, dohromady do 450 znaků.",
+  "První věta začne názvem hry a řekne, o jaký typ hry jde: žánr popiš",
+  "přirozenou češtinou a doplň, čím je hratelnost specifická — pohled,",
+  "klíčové mechaniky, kombinace žánrů.",
+  "Druhou větu o studiu piš jen tehdy, když k němu umíš dodat konkrétní",
+  "kontext (např. jaké známé hry mají jeho lidé za sebou). Když takový",
+  "kontext nemáš nebo si jím nejsi jistý, studio i vydavatele vynech úplně.",
+  "Fakta o hře ber z dodaných údajů a nic si k nim nedomýšlej.",
+  "Nepiš datum vydání, platformy, hodnocení ani marketingová klišé.",
   "Vrať jen text popisu, bez markdownu, uvozovek a nadpisů.",
 ].join(" ");
 
