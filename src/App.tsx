@@ -31,12 +31,6 @@ import {
   type HrejRef,
 } from "./hrej";
 
-const LOCALIZATION_LABELS: Record<string, string> = {
-  Audio: "dabing",
-  Subtitles: "titulky",
-  Interface: "rozhraní",
-};
-
 const coverUrl = (imageId: string) =>
   `https://images.igdb.com/igdb/image/upload/t_cover_big_2x/${imageId}.jpg`;
 
