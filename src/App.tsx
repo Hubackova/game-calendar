@@ -5,6 +5,7 @@ import { suggestDescription } from "./gemini";
 import { EDITOR_TOOLS } from "./config";
 import { loadMarks, saveMarks, type Mark } from "./favorites";
 import { applyTheme, currentTheme, loadTheme, type Theme } from "./theme";
+import { MONTHS, WEEKDAYS, locale, metricLabel, t } from "./i18n";
 import { fetchGamesByIds } from "./igdb";
 import {
   HREJ_COVER_HEIGHT,
@@ -35,8 +36,8 @@ import {
 const coverUrl = (imageId: string) =>
   `https://images.igdb.com/igdb/image/upload/t_cover_big_2x/${imageId}.jpg`;
 
-const dayFormat = new Intl.DateTimeFormat("cs-CZ", { dateStyle: "long" });
-const monthFormat = new Intl.DateTimeFormat("cs-CZ", {
+const dayFormat = new Intl.DateTimeFormat(locale, { dateStyle: "long" });
+const monthFormat = new Intl.DateTimeFormat(locale, {
   month: "long",
   year: "numeric",
 });
@@ -48,7 +49,7 @@ const monthFormat = new Intl.DateTimeFormat("cs-CZ", {
  */
 const releaseDate = (game: Game) => {
   const { first_release_date: timestamp, date_format: precision } = game;
-  if (timestamp == null || precision === 7) return "datum neznámé";
+  if (timestamp == null || precision === 7) return t("unknownDate");
 
   const date = new Date(timestamp * 1000);
   if (precision != null && precision >= 3 && precision <= 6) {
@@ -772,8 +773,6 @@ function NewGameButton({ game }: { game: Game }) {
   );
 }
 
-const WEEKDAYS = ["po", "út", "st", "čt", "pá", "so", "ne"];
-
 /** Den v mesici, na ktery hra pripada; jen u presneho data. */
 const dayOfMonth = (game: Game) =>
   game.date_format === 0 && game.first_release_date != null
@@ -846,18 +845,18 @@ function GameDialog({
             )}
             <div className="detail-text">
               <dl className="details">
-                <Detail label="Vydání" value={releaseDate(game)} />
-                <Detail label="Vývojář" value={game.developers} />
-                <Detail label="Vydavatel" value={game.publishers} />
-                <Detail label="Platformy" value={game.platforms} />
-                <Detail label="Žánry" value={game.genres} />
+                <Detail label={t("released")} value={releaseDate(game)} />
+                <Detail label={t("developer")} value={game.developers} />
+                <Detail label={t("publisher")} value={game.publishers} />
+                <Detail label={t("platforms")} value={game.platforms} />
+                <Detail label={t("genres")} value={game.genres} />
                 <Detail label="PEGI" value={game.pegi} />
               </dl>
               {game.summary && <p className="detail-summary">{game.summary}</p>}
               {game.url && (
                 <p className="detail-link">
                   <a href={game.url} target="_blank" rel="noreferrer">
-                    Stránka na IGDB
+                    {t("igdbPage")}
                   </a>
                 </p>
               )}
@@ -955,7 +954,7 @@ function CalendarMonth({
 
       {withoutDay.length > 0 && (
         <div className="cal-loose">
-          <span className="field-label">Bez konkrétního dne</span>
+          <span className="field-label">{t("looseGames")}</span>
           <ul className="cal-games">
             {withoutDay.map((game) => (
               <CalendarEntry key={game.id} game={game} onOpen={onOpen} />
@@ -1066,8 +1065,8 @@ function MarkButtons({
         type="button"
         className={mark === "fav" ? "mark mark-fav-on" : "mark"}
         aria-pressed={mark === "fav"}
-        title={mark === "fav" ? "Odebrat z oblíbených" : "Přidat do oblíbených"}
-        aria-label={`Oblíbené: ${name}`}
+        title={mark === "fav" ? t("removeFav") : t("addFav")}
+        aria-label={`${t("favOf")}: ${name}`}
         onClick={() => onMark("fav")}
       >
         ♥
@@ -1076,8 +1075,8 @@ function MarkButtons({
         type="button"
         className={mark === "interest" ? "mark mark-int-on" : "mark"}
         aria-pressed={mark === "interest"}
-        title={mark === "interest" ? "Už mě nezajímá" : "Zajímá mě"}
-        aria-label={`Zajímá mě: ${name}`}
+        title={mark === "interest" ? t("removeInterest") : t("addInterest")}
+        aria-label={`${t("interestOf")}: ${name}`}
         onClick={() => onMark("interest")}
       >
         <BulbIcon />
@@ -1459,21 +1458,6 @@ type View =
   /** Hry, u kterych IGDB zna jen rok, kvartal nebo nic. */
   | { kind: "undated"; year: number };
 
-const MONTHS = [
-  "leden",
-  "únor",
-  "březen",
-  "duben",
-  "květen",
-  "červen",
-  "červenec",
-  "srpen",
-  "září",
-  "říjen",
-  "listopad",
-  "prosinec",
-];
-
 /** Ma vypis navazany rok? Bez nej se v selectu zobrazuje "-". */
 const hasPeriod = (view: View): view is Extract<View, { year: number }> =>
   view.kind === "month" || view.kind === "year" || view.kind === "undated";
@@ -1716,7 +1700,7 @@ function App() {
             <select
               /* Bez zvoleneho obdobi rok nic neovlivnuje, proto "-". */
               value={hasPeriod(view) ? view.year : ""}
-              aria-label="Rok vydání"
+              aria-label={t("yearLabel")}
               onChange={(event) => {
                 if (!event.target.value) return setView({ kind: "upcoming" });
 
@@ -1749,15 +1733,15 @@ function App() {
                       ? "year"
                       : ""
               }
-              aria-label="Období vydání"
+              aria-label={t("periodLabel")}
               onChange={(event) => {
                 setInputValue("");
                 selectPeriod(event.target.value);
               }}
             >
               {/* Prvni volba filtr rusi, proto ma nazev, ne placeholder. */}
-              <option value="">Nejočekávanější (bez období)</option>
-              <option value="year">celý rok</option>
+              <option value="">{t("noPeriod")}</option>
+              <option value="year">{t("wholeYear")}</option>
               {MONTHS.map((_, index) => index + 1)
                 // V aktualnim roce nenabizime mesice, ktere uz probehly.
                 .filter(
@@ -1769,7 +1753,7 @@ function App() {
                     {MONTHS[month - 1]}
                   </option>
                 ))}
-              <option value="undated">bez data (rok/kvartál)</option>
+              <option value="undated">{t("undated")}</option>
             </select>
 
             <button
@@ -1778,19 +1762,19 @@ function App() {
               aria-pressed={asCalendar}
               onClick={toggleCalendar}
             >
-              {asCalendar ? "Seznam" : "Kalendář"}
+              {asCalendar ? t("list") : t("calendar")}
             </button>
 
             <select
               value={markFilter}
-              aria-label="Filtr podle značek"
+              aria-label={t("marksLabel")}
               onChange={(event) =>
                 setMarkFilter(event.target.value as "all" | "fav" | "both")
               }
             >
-              <option value="all">Vše</option>
-              <option value="fav">Jen ♥</option>
-              <option value="both">♥ + zajímá mě</option>
+              <option value="all">{t("marksAll")}</option>
+              <option value="fav">{t("marksFav")}</option>
+              <option value="both">{t("marksBoth")}</option>
             </select>
 
             {/* Metriky zna jen mesicni vypis, jinde neni podle ceho radit. */}
@@ -1799,13 +1783,13 @@ function App() {
               metrics.length > 0 && (
                 <select
                   value={metrics.includes(sortBy) ? sortBy : "hypes"}
-                  aria-label="Řadit podle"
+                  aria-label={t("sortLabel")}
                   onChange={(event) => setSortBy(event.target.value)}
                 >
-                  <option value="hypes">Řadit: IGDB sledující</option>
+                  <option value="hypes">{`${t("sortBy")}: ${t("followers")}`}</option>
                   {metrics.map((label) => (
                     <option key={label} value={label}>
-                      Řadit: {label}
+                      {`${t("sortBy")}: ${metricLabel(label)}`}
                     </option>
                   ))}
                 </select>
@@ -1823,26 +1807,22 @@ function App() {
             <input
               type="search"
               value={inputValue}
-              placeholder="Hledat hru…"
-              aria-label="Hledat hru"
+              placeholder={t("searchPlaceholder")}
+              aria-label={t("search")}
               onChange={(event) => {
                 setInputValue(event.target.value);
                 // Vymazani inputu vrati vychozi seznam.
                 if (event.target.value === "") setView({ kind: "upcoming" });
               }}
             />
-            <button type="submit">Hledat</button>
+            <button type="submit">{t("search")}</button>
           </form>
 
           <button
             type="button"
             className="theme-toggle"
-            title={
-              currentTheme(theme) === "dark"
-                ? "Přepnout na denní režim"
-                : "Přepnout na noční režim"
-            }
-            aria-label="Přepnout denní a noční režim"
+            title={currentTheme(theme) === "dark" ? t("toDay") : t("toNight")}
+            aria-label={t("themeLabel")}
             onClick={() =>
               setTheme(currentTheme(theme) === "dark" ? "light" : "dark")
             }
@@ -1856,13 +1836,13 @@ function App() {
         {/* Jeden pruh na vsechna hlaseni — drzi vysku, takze stranka neposkakuje. */}
         <p className="status" role="status" aria-live="polite">
           {loading ? (
-            "Načítám…"
+            t("loading")
           ) : error ? (
             <span className="error">{error}</span>
           ) : games.length === 0 ? (
-            "Nic nenalezeno — zkus jiný název."
+            t("nothingFound")
           ) : shownGames.length === 0 && markFilter !== "all" ? (
-            "Žádné označené hry v tomto výpisu."
+            t("noMarked")
           ) : (
             ""
           )}
@@ -1912,9 +1892,9 @@ function App() {
                   <p className="meta">
                     {releaseDate(game)}
                     {game.hypes != null && (
-                      <span title="Počet lidí, kteří hru na IGDB sledovali před vydáním">
+                      <span title={t("followersTitle")}>
                         {" · "}
-                        {game.hypes} IGDB sledujících
+                        {game.hypes} {t("followers")}
                       </span>
                     )}
                     {game.popularity?.map((place) => (
@@ -1927,9 +1907,9 @@ function App() {
                   {game.summary && <p className="summary">{game.summary}</p>}
 
                   <dl className="details">
-                    <Detail label="Žánry" value={game.genres} />
-                    <Detail label="Vývojář" value={game.developers} />
-                    <Detail label="Platformy" value={game.platforms} />
+                    <Detail label={t("genres")} value={game.genres} />
+                    <Detail label={t("developer")} value={game.developers} />
+                    <Detail label={t("platforms")} value={game.platforms} />
                   </dl>
                 </div>
               </li>
@@ -1938,13 +1918,13 @@ function App() {
         )}
 
         {!asCalendar && pageCount > 1 && (
-          <nav className="pager" aria-label="Stránkování">
+          <nav className="pager" aria-label={t("pagerLabel")}>
             <button
               type="button"
               disabled={currentPage === 1}
               onClick={() => goToPage(currentPage - 1)}
             >
-              ← Předchozí
+              {t("prevPage")}
             </button>
             <span>
               {currentPage} / {pageCount}
@@ -1954,7 +1934,7 @@ function App() {
               disabled={currentPage === pageCount}
               onClick={() => goToPage(currentPage + 1)}
             >
-              Další →
+              {t("nextPage")}
             </button>
           </nav>
         )}
