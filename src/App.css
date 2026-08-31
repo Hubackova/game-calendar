@@ -14,7 +14,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --ok-bg: rgb(63 143 95 / 0.16);
     --ok-text: #8fd3a6;
     --warn-bg: rgb(201 162 39 / 0.16);
@@ -26,6 +26,16 @@
   }
 }
 
+:root[data-theme="dark"] {
+  --ok-bg: rgb(63 143 95 / 0.16);
+  --ok-text: #8fd3a6;
+  --warn-bg: rgb(201 162 39 / 0.16);
+  --warn-text: #e3c473;
+  --bad-bg: rgb(200 70 60 / 0.16);
+  --bad-text: #f0a49c;
+  --info-bg: rgb(110 145 225 / 0.18);
+  --info-text: #aec4f2;
+}
 .games {
   max-width: 720px;
   margin: 0 auto;
@@ -1081,4 +1091,15 @@
   margin: 0 0 0.75rem;
   font-size: 0.9rem;
   opacity: 0.8;
+}
+
+/* Prepinac rezimu sedi v pravem hornim rohu hlavicky. */
+.theme-toggle {
+  width: 2.25rem;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

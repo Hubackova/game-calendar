@@ -4,6 +4,7 @@ import type { Game } from "./types";
 import { suggestDescription } from "./gemini";
 import { EDITOR_TOOLS } from "./config";
 import { loadMarks, saveMarks, type Mark } from "./favorites";
+import { applyTheme, currentTheme, loadTheme, type Theme } from "./theme";
 import { fetchGamesByIds } from "./igdb";
 import {
   HREJ_COVER_HEIGHT,
@@ -1522,6 +1523,13 @@ function App() {
   const [sortBy, setSortBy] = useState("hypes");
   /** Kalendarni mrizka dava smysl jen nad jednim mesicem. */
   const [asCalendar, setAsCalendar] = useState(false);
+  /** `null` = podle systemu, dokud si clovek nevybere. */
+  const [theme, setTheme] = useState<Theme | null>(loadTheme);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
   /** Znacky u her (srdicko / zarovka); drzi se v localStorage. */
   const [marks, setMarks] = useState<Map<number, Mark>>(loadMarks);
   /** "all" = vse, "fav" = jen srdicko, "both" = srdicko i zajima me. */
@@ -1825,6 +1833,22 @@ function App() {
             />
             <button type="submit">Hledat</button>
           </form>
+
+          <button
+            type="button"
+            className="theme-toggle"
+            title={
+              currentTheme(theme) === "dark"
+                ? "Přepnout na denní režim"
+                : "Přepnout na noční režim"
+            }
+            aria-label="Přepnout denní a noční režim"
+            onClick={() =>
+              setTheme(currentTheme(theme) === "dark" ? "light" : "dark")
+            }
+          >
+            {currentTheme(theme) === "dark" ? "☀" : "☾"}
+          </button>
         </div>
       </header>
 
