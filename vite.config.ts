@@ -302,6 +302,54 @@ function geminiPlugin(apiKey: string): Plugin {
   };
 }
 
+/**
+ * Absolutni adresy do `<head>` (canonical, og:url, og:image) a do robots.txt
+ * se sitemapou. Adresu nechceme mit zadratovanou v kodu: Netlify ji dava
+ * v `URL`, lokalne padneme na dev server.
+ */
+function seoPlugin(siteUrl: string): Plugin {
+  const base = siteUrl.replace(/\/+$/, "");
+
+  return {
+    name: "seo-urls",
+    // Musi bezet driv nez Vite resi vlastni `%VAR%` v index.html.
+    enforce: "pre",
+    transformIndexHtml: (html) => html.replaceAll("%SITE_URL%", base),
+    // `generateBundle` bezi jen pri buildu, `transformIndexHtml` i v devu.
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "robots.txt",
+        source: [
+          "User-agent: *",
+          "Allow: /",
+          // Endpointy nemaji co delat ve vysledcich hledani.
+          "Disallow: /api/",
+          "",
+          `Sitemap: ${base}/sitemap.xml`,
+          "",
+        ].join("\n"),
+      });
+
+      this.emitFile({
+        type: "asset",
+        fileName: "sitemap.xml",
+        source: [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+          "  <url>",
+          `    <loc>${base}/</loc>`,
+          `    <lastmod>${new Date().toISOString().slice(0, 10)}</lastmod>`,
+          "    <changefreq>daily</changefreq>",
+          "  </url>",
+          "</urlset>",
+          "",
+        ].join("\n"),
+      });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -312,6 +360,7 @@ export default defineConfig(({ mode }) => {
       igdbPlugin(env.TWITCH_CLIENT_ID, env.TWITCH_CLIENT_SECRET),
       hrejPlugin(env.HREJ_API_TOKEN),
       geminiPlugin(env.GEMINI_API_KEY),
+      seoPlugin(env.SITE_URL || env.URL || "http://localhost:5173"),
     ],
   };
 });
