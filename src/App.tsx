@@ -3,7 +3,7 @@ import "./App.css";
 import type { Game } from "./types";
 import { suggestDescription } from "./gemini";
 import { EDITOR_TOOLS } from "./config";
-import { loadFavorites, saveFavorites } from "./favorites";
+import { loadMarks, saveMarks, type Mark } from "./favorites";
 import { fetchGamesByIds } from "./igdb";
 import {
   HREJ_COVER_HEIGHT,
@@ -815,13 +815,13 @@ function CalendarEntry({
 /** Detail hry po kliknuti v kalendari. */
 function GameDialog({
   game,
-  favorite,
-  onToggleFavorite,
+  mark,
+  onMark,
   onClose,
 }: {
   game: Game | null;
-  favorite: boolean;
-  onToggleFavorite: (id: number) => void;
+  mark: Mark | undefined;
+  onMark: (id: number, mark: Mark) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -836,10 +836,10 @@ function GameDialog({
       <h3>
         {game?.name ?? ""}
         {game && (
-          <FavoriteButton
-            active={favorite}
-            onToggle={() => onToggleFavorite(game.id)}
+          <MarkButtons
             name={game.name}
+            mark={mark}
+            onMark={(next) => onMark(game.id, next)}
           />
         )}
       </h3>
@@ -883,20 +883,20 @@ function GameDialog({
  * Mesicni mrizka. Hry s presnym datem sedi ve svem dni, hry se znamym jen
  * mesicem by na prvniho lhaly, takze maji vlastni pasek pod kalendarem.
  */
-function CalendarView({
+function CalendarMonth({
   games,
   year,
   month,
-  favorites,
-  onToggleFavorite,
+  onOpen,
+  todayRef,
 }: {
   games: Game[];
   year: number;
   month: number;
-  favorites: Set<number>;
-  onToggleFavorite: (id: number) => void;
+  onOpen: (game: Game) => void;
+  /** Dnesni policko, aby na nej slo po otevreni odscrollovat. */
+  todayRef?: React.Ref<HTMLDivElement>;
 }) {
-  const [detail, setDetail] = useState<Game | null>(null);
   const byDay = new Map<number, Game[]>();
   const withoutDay: Game[] = [];
   for (const game of games) {
@@ -927,31 +927,35 @@ function CalendarView({
             {day}
           </div>
         ))}
-        {cells.map((day, index) => (
-          <div
-            key={index}
-            className={
-              "cal-day" +
-              (day === null ? " cal-empty" : "") +
-              (isThisMonth && day === today.getDate() ? " cal-today" : "")
-            }
-          >
-            {day !== null && (
-              <>
-                <span className="cal-number">{day}</span>
-                <ul className="cal-games">
-                  {(byDay.get(day) ?? []).map((game) => (
-                    <CalendarEntry
-                      key={game.id}
-                      game={game}
-                      onOpen={setDetail}
-                    />
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        ))}
+        {cells.map((day, index) => {
+          const isToday = isThisMonth && day === today.getDate();
+          return (
+            <div
+              key={index}
+              ref={isToday ? todayRef : undefined}
+              className={
+                "cal-day" +
+                (day === null ? " cal-empty" : "") +
+                (isToday ? " cal-today" : "")
+              }
+            >
+              {day !== null && (
+                <>
+                  <span className="cal-number">{day}</span>
+                  <ul className="cal-games">
+                    {(byDay.get(day) ?? []).map((game) => (
+                      <CalendarEntry
+                        key={game.id}
+                        game={game}
+                        onOpen={onOpen}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {withoutDay.length > 0 && (
@@ -959,45 +963,131 @@ function CalendarView({
           <span className="field-label">Bez konkrétního dne</span>
           <ul className="cal-games">
             {withoutDay.map((game) => (
-              <CalendarEntry key={game.id} game={game} onOpen={setDetail} />
+              <CalendarEntry key={game.id} game={game} onOpen={onOpen} />
             ))}
           </ul>
         </div>
       )}
+    </>
+  );
+}
+
+/**
+ * Kalendar pro jeden mesic, nebo pro cely rok — pak jsou mesice pod sebou.
+ * Detail hry drzi tahle uroven, aby na dvanact mrizek stacil jeden dialog.
+ */
+function CalendarView({
+  games,
+  year,
+  month,
+  marks,
+  onMark,
+}: {
+  games: Game[];
+  year: number;
+  /** `null` = cely rok. */
+  month: number | null;
+  marks: Map<number, Mark>;
+  onMark: (id: number, mark: Mark) => void;
+}) {
+  const [detail, setDetail] = useState<Game | null>(null);
+  const todayCell = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (todayCell.current) {
+      todayCell.current.scrollIntoView({ block: "center" });
+    } else {
+      // Obdobi bez dneska — jinak by clovek zustal uprostred predchoziho vypisu.
+      window.scrollTo({ top: 0 });
+    }
+  }, [year, month]);
+
+  const monthOf = (game: Game) =>
+    game.first_release_date == null
+      ? null
+      : new Date(game.first_release_date * 1000).getUTCMonth() + 1;
+
+  const months = month
+    ? [month]
+    : Array.from({ length: 12 }, (_, index) => index + 1);
+
+  return (
+    <>
+      {months.map((current) => (
+        <section key={current} className="cal-month">
+          {month === null && (
+            <h2 className="cal-month-title">
+              {MONTHS[current - 1]} {year}
+            </h2>
+          )}
+          <CalendarMonth
+            games={games.filter((game) => monthOf(game) === current)}
+            year={year}
+            month={current}
+            onOpen={setDetail}
+            todayRef={todayCell}
+          />
+        </section>
+      ))}
 
       <GameDialog
         game={detail}
-        favorite={detail ? favorites.has(detail.id) : false}
-        onToggleFavorite={onToggleFavorite}
+        mark={detail ? marks.get(detail.id) : undefined}
+        onMark={onMark}
         onClose={() => setDetail(null)}
       />
     </>
   );
 }
 
-/** Srdicko pro pridani do oblibenych. */
-function FavoriteButton({
-  active,
-  onToggle,
+/** Ikona zarovky; jako SVG, at ji lze barvit pres `currentColor`. */
+function BulbIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M9 21h6v-1H9v1zm3-19a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2zm-2 16h4v1h-4v-1z"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Znacky u hry. Hra muze mit jen jednu, takze kliknuti na druhou tu prvni
+ * prepne — proto jedna komponenta pro obe, ne dve nezavisla tlacitka.
+ */
+function MarkButtons({
   name,
+  mark,
+  onMark,
 }: {
-  active: boolean;
-  onToggle: () => void;
   name: string;
+  mark: Mark | undefined;
+  onMark: (mark: Mark) => void;
 }) {
   return (
-    <button
-      type="button"
-      className={active ? "fav fav-on" : "fav"}
-      aria-pressed={active}
-      title={active ? "Odebrat z oblíbených" : "Přidat do oblíbených"}
-      aria-label={`${active ? "Odebrat" : "Přidat"} ${name} ${
-        active ? "z oblíbených" : "do oblíbených"
-      }`}
-      onClick={onToggle}
-    >
-      ♥
-    </button>
+    <>
+      <button
+        type="button"
+        className={mark === "fav" ? "mark mark-fav-on" : "mark"}
+        aria-pressed={mark === "fav"}
+        title={mark === "fav" ? "Odebrat z oblíbených" : "Přidat do oblíbených"}
+        aria-label={`Oblíbené: ${name}`}
+        onClick={() => onMark("fav")}
+      >
+        ♥
+      </button>
+      <button
+        type="button"
+        className={mark === "interest" ? "mark mark-int-on" : "mark"}
+        aria-pressed={mark === "interest"}
+        title={mark === "interest" ? "Už mě nezajímá" : "Zajímá mě"}
+        aria-label={`Zajímá mě: ${name}`}
+        onClick={() => onMark("interest")}
+      >
+        <BulbIcon />
+      </button>
+    </>
   );
 }
 
@@ -1438,18 +1528,21 @@ function App() {
   const [sortBy, setSortBy] = useState("hypes");
   /** Kalendarni mrizka dava smysl jen nad jednim mesicem. */
   const [asCalendar, setAsCalendar] = useState(false);
-  /** Oblibene hry podle IGDB id; drzi se v localStorage. */
-  const [favorites, setFavorites] = useState<Set<number>>(loadFavorites);
-  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  /** Znacky u her (srdicko / zarovka); drzi se v localStorage. */
+  const [marks, setMarks] = useState<Map<number, Mark>>(loadMarks);
+  /** "all" = vse, "fav" = jen srdicko, "both" = srdicko i zajima me. */
+  const [markFilter, setMarkFilter] = useState<"all" | "fav" | "both">("all");
   const [page, setPage] = useState(1);
-  /** Oblibene hry stazene podle id — nemusi byt v aktualnim vypisu. */
-  const [favoriteGames, setFavoriteGames] = useState<Game[]>([]);
+  /** Oznacene hry stazene podle id — nemusi byt v aktualnim vypisu. */
+  const [markedGames, setMarkedGames] = useState<Game[]>([]);
 
-  const toggleFavorite = (id: number) =>
-    setFavorites((current) => {
-      const next = new Set(current);
-      if (!next.delete(id)) next.add(id);
-      saveFavorites(next);
+  /** Hra ma vzdy jen jednu znacku, takze druha tu prvni prepise. */
+  const setMark = (id: number, mark: Mark) =>
+    setMarks((current) => {
+      const next = new Map(current);
+      if (next.get(id) === mark) next.delete(id);
+      else next.set(id, mark);
+      saveMarks(next);
       return next;
     });
 
@@ -1484,13 +1577,13 @@ function App() {
   const listGames = useMemo(
     () => {
       const known = new Set(games.map((game) => game.id));
-      const extra = favoriteGames.filter(
+      const extra = markedGames.filter(
         (game) => !known.has(game.id) && belongsToView(game),
       );
       return extra.length ? [...games, ...extra] : games;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [games, favoriteGames, view],
+    [games, markedGames, view],
   );
 
   /** Metriky bereme z dat, at je backend muze pridat bez zasahu do UI. */
@@ -1545,27 +1638,27 @@ function App() {
 
   useEffect(() => {
     setPage(1);
-  }, [view, sortBy, onlyFavorites]);
+  }, [view, sortBy, markFilter]);
 
   useEffect(() => {
-    const ids = [...favorites];
-    if (!ids.length) return setFavoriteGames([]);
+    const ids = [...marks.keys()];
+    if (!ids.length) return setMarkedGames([]);
 
     let cancelled = false;
     fetchGamesByIds(ids)
-      .then((loaded) => !cancelled && setFavoriteGames(loaded))
+      .then((loaded) => !cancelled && setMarkedGames(loaded))
       .catch((err: Error) => console.error(err));
     return () => {
       cancelled = true;
     };
-  }, [favorites]);
+  }, [marks]);
 
   /* Bez zvoleneho obdobi se ridime naposledy vybranym rokem. */
   const selectedYear = hasPeriod(view) ? view.year : year;
 
   const selectPeriod = (value: string) => {
-    // Mimo konkretni mesic nema mrizka co kreslit.
-    if (value !== "" && !Number(value)) setAsCalendar(false);
+    // Mrizka umi mesic i cely rok; „bez data“ a vychozi vypis uz ne.
+    if (value === "" || value === "undated") setAsCalendar(false);
     if (value === "undated") return setView({ kind: "undated", year });
     if (value === "year") return setView({ kind: "year", year });
     const month = Number(value);
@@ -1576,16 +1669,20 @@ function App() {
   const toggleCalendar = () => {
     const next = !asCalendar;
     setAsCalendar(next);
-    if (next && view.kind !== "month") {
+    if (next && view.kind !== "month" && view.kind !== "year") {
       const month = selectedYear > CURRENT_YEAR ? 1 : CURRENT_MONTH;
       setInputValue("");
       setView({ kind: "month", year: selectedYear, month });
     }
   };
 
-  const shownGames = onlyFavorites
-    ? sortedGames.filter((game) => favorites.has(game.id))
-    : sortedGames;
+  const shownGames =
+    markFilter === "all"
+      ? sortedGames
+      : sortedGames.filter((game) => {
+          const mark = marks.get(game.id);
+          return markFilter === "fav" ? mark === "fav" : mark !== undefined;
+        });
 
   const pageCount = Math.max(1, Math.ceil(shownGames.length / PAGE_SIZE));
   // Po zmene filtru muze byt ulozena stranka mimo rozsah.
@@ -1682,14 +1779,17 @@ function App() {
               {asCalendar ? "Seznam" : "Kalendář"}
             </button>
 
-            <button
-              type="button"
-              className="view-toggle"
-              aria-pressed={onlyFavorites}
-              onClick={() => setOnlyFavorites((value) => !value)}
+            <select
+              value={markFilter}
+              aria-label="Filtr podle značek"
+              onChange={(event) =>
+                setMarkFilter(event.target.value as "all" | "fav" | "both")
+              }
             >
-              ♥ Jen oblíbené{favorites.size > 0 && ` (${favorites.size})`}
-            </button>
+              <option value="all">Vše</option>
+              <option value="fav">Jen ♥</option>
+              <option value="both">♥ + zajímá mě</option>
+            </select>
 
             {/* Metriky zna jen mesicni vypis, jinde neni podle ceho radit. */}
             {view.kind !== "upcoming" &&
@@ -1735,22 +1835,28 @@ function App() {
       </header>
 
       <section className={asCalendar ? "games games-wide" : "games"}>
-        {loading && <p>Načítám…</p>}
-        {error && <p className="error">{error}</p>}
-        {!loading && !error && shownGames.length === 0 && onlyFavorites && (
-          <p>Žádné oblíbené hry v tomto výpisu.</p>
-        )}
-        {!loading && !error && games.length === 0 && (
-          <p>Nic nenalezeno — zkus jiný název.</p>
-        )}
+        {/* Jeden pruh na vsechna hlaseni — drzi vysku, takze stranka neposkakuje. */}
+        <p className="status" role="status" aria-live="polite">
+          {loading ? (
+            "Načítám…"
+          ) : error ? (
+            <span className="error">{error}</span>
+          ) : games.length === 0 ? (
+            "Nic nenalezeno — zkus jiný název."
+          ) : shownGames.length === 0 && markFilter !== "all" ? (
+            "Žádné označené hry v tomto výpisu."
+          ) : (
+            ""
+          )}
+        </p>
 
-        {asCalendar && view.kind === "month" ? (
+        {asCalendar && (view.kind === "month" || view.kind === "year") ? (
           <CalendarView
             games={shownGames}
-            favorites={favorites}
-            onToggleFavorite={toggleFavorite}
+            marks={marks}
+            onMark={setMark}
             year={view.year}
-            month={view.month}
+            month={view.kind === "month" ? view.month : null}
           />
         ) : (
           <ul className="game-list">
@@ -1772,10 +1878,10 @@ function App() {
                     ) : (
                       game.name
                     )}
-                    <FavoriteButton
-                      active={favorites.has(game.id)}
-                      onToggle={() => toggleFavorite(game.id)}
+                    <MarkButtons
                       name={game.name}
+                      mark={marks.get(game.id)}
+                      onMark={(next) => setMark(game.id, next)}
                     />
                     {EDITOR_TOOLS && (
                       <>
