@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# SPA: vsechno ostatni obsluhuje index.html. Funkce se resi driv nez redirecty,
+# takze `/api/games` sem nespadne.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
