@@ -29,6 +29,13 @@ const TOP_PER_METRIC = 30;
 const YEAR_PER_METRIC = 100;
 const YEAR_LIMIT = 100;
 
+/**
+ * Edice („: Digital Premium Edition“) jsou v IGDB samostatne hry s odkazem
+ * na zakladni titul. Ve vypisech chceme jen tu zakladni, jinak jeden titul
+ * zabere pul stranky.
+ */
+const BASE_GAME_ONLY = "version_parent = null";
+
 /** IGDB id cestiny v /languages. */
 const CZECH_LANGUAGE_ID = 4;
 /** IGDB id organizace PEGI v /age_rating_organizations. */
@@ -210,7 +217,7 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
       const page = (await query(
         "games",
         `fields ${GAME_FIELDS};
-         where first_release_date > ${now} & hypes >= ${MIN_HYPES};
+         where first_release_date > ${now} & hypes >= ${MIN_HYPES} & ${BASE_GAME_ONLY};
          sort hypes desc;
          limit ${PAGE_SIZE};
          offset ${offset};`,
@@ -236,7 +243,7 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
     return (await query(
       "games",
       `fields id, hypes, first_release_date, release_dates.date, release_dates.date_format;
-       where first_release_date >= ${from} & first_release_date < ${to};
+       where first_release_date >= ${from} & first_release_date < ${to} & ${BASE_GAME_ONLY};
        sort hypes desc;
        limit 500;`,
     )) as Candidate[];
@@ -408,6 +415,7 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
         "games",
         `search "${safeTerm}";
          fields ${GAME_FIELDS};
+         where ${BASE_GAME_ONLY};
          limit 50;`,
       )) as unknown[],
     );

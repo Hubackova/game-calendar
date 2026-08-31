@@ -4,17 +4,24 @@
  * jsou schovane za `EDITOR_TOOLS` a pouziva je jen redakce.
  */
 const cs = {
+  brand: "Herní kalendář",
+  settings: "Nastavení",
+  language: "Jazyk",
+  mode: "Režim",
+  modeLight: "Den",
+  modeDark: "Noc",
+  modeSystem: "Systém",
   yearLabel: "Rok vydání",
   periodLabel: "Období vydání",
-  noPeriod: "Nejočekávanější (bez období)",
+  noPeriod: "kdykoliv",
   wholeYear: "celý rok",
   undated: "bez data (rok/kvartál)",
   calendar: "Kalendář",
   list: "Seznam",
   marksLabel: "Filtr podle značek",
   marksAll: "Vše",
-  marksFav: "Jen ♥",
-  marksBoth: "♥ + zajímá mě",
+  marksFav: "Jen oblíbené",
+  marksBoth: "Oblíbené + zajímá mě",
   sortLabel: "Řadit podle",
   sortBy: "Řadit",
   followers: "IGDB sledujících",
@@ -53,17 +60,24 @@ const cs = {
 };
 
 const en: typeof cs = {
+  brand: "Games calendar",
+  settings: "Settings",
+  language: "Language",
+  mode: "Mode",
+  modeLight: "Light",
+  modeDark: "Dark",
+  modeSystem: "System",
   yearLabel: "Release year",
   periodLabel: "Release period",
-  noPeriod: "Most anticipated (no period)",
+  noPeriod: "anytime",
   wholeYear: "whole year",
   undated: "no exact date (year / quarter)",
   calendar: "Calendar",
   list: "List",
   marksLabel: "Filter by marks",
   marksAll: "All",
-  marksFav: "♥ only",
-  marksBoth: "♥ + interested",
+  marksFav: "Favourites only",
+  marksBoth: "Favourites + interested",
   sortLabel: "Sort by",
   sortBy: "Sort",
   followers: "IGDB followers",
@@ -101,27 +115,72 @@ const en: typeof cs = {
   metricVisits: "IGDB visits",
 };
 
-const isCzech = navigator.language.toLowerCase().startsWith("cs");
+export type Lang = "cs" | "en";
 
-export const locale = isCzech ? "cs-CZ" : "en-GB";
-const dict = isCzech ? cs : en;
+const STORAGE_KEY = "lang";
+const dicts = { cs, en };
 
-export const t = (key: keyof typeof cs) => dict[key];
+function detect(): Lang {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "cs" || saved === "en") return saved;
+  } catch {
+    /* bez ulozene volby rozhoduje prohlizec */
+  }
+  return navigator.language.toLowerCase().startsWith("cs") ? "cs" : "en";
+}
+
+let lang: Lang = detect();
+
+export const getLang = () => lang;
+
+/**
+ * Prepnuti jazyka nevyzaduje reload: `t()` cte aktualni slovnik a cely strom
+ * je pod jednou komponentou, takze staci, aby si zavolala setState.
+ */
+export function setLang(next: Lang): void {
+  lang = next;
+  try {
+    localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    /* bez ulozeni vydrzi volba do reloadu */
+  }
+}
+
+export const t = (key: keyof typeof cs) => dicts[lang][key];
+
+const localeOf = (value: Lang) => (value === "cs" ? "cs-CZ" : "en-GB");
+
+/** Formatovani datumu drzime tady, aby slo za aktualnim jazykem. */
+export const formatDay = (date: Date) =>
+  new Intl.DateTimeFormat(localeOf(lang), { dateStyle: "long" }).format(date);
+
+export const formatMonthYear = (date: Date) =>
+  new Intl.DateTimeFormat(localeOf(lang), {
+    month: "long",
+    year: "numeric",
+  }).format(date);
 
 /** Nazvy mesicu a dnu bereme z Intl, at nejsou dvakrat v prekladech. */
-export const MONTHS = Array.from({ length: 12 }, (_, index) =>
-  new Intl.DateTimeFormat(locale, { month: "long", timeZone: "UTC" }).format(
-    new Date(Date.UTC(2021, index, 1)),
-  ),
-);
+export const months = () =>
+  Array.from({ length: 12 }, (_, index) =>
+    new Intl.DateTimeFormat(localeOf(lang), {
+      month: "long",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(2021, index, 1))),
+  );
 
 /** Pondeli az nedele. */
-export const WEEKDAYS = Array.from({ length: 7 }, (_, index) =>
-  new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(
-    // 2021-03-01 bylo pondeli.
-    new Date(Date.UTC(2021, 2, 1 + index)),
-  ),
-);
+export const weekdays = () =>
+  Array.from({ length: 7 }, (_, index) =>
+    new Intl.DateTimeFormat(localeOf(lang), {
+      weekday: "short",
+      timeZone: "UTC",
+    }).format(
+      // 2021-03-01 bylo pondeli.
+      new Date(Date.UTC(2021, 2, 1 + index)),
+    ),
+  );
 
 /** Metriky prichazi ze serveru cesky; pro anglictinu je prelozime. */
 export const metricLabel = (label: string) =>

@@ -1,11 +1,28 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import "./App.css";
 import type { Game } from "./types";
 import { suggestDescription } from "./gemini";
 import { EDITOR_TOOLS } from "./config";
 import { loadMarks, saveMarks, type Mark } from "./favorites";
-import { applyTheme, currentTheme, loadTheme, type Theme } from "./theme";
-import { MONTHS, WEEKDAYS, locale, metricLabel, t } from "./i18n";
+import { applyTheme, loadTheme, type Theme } from "./theme";
+import {
+  formatDay,
+  formatMonthYear,
+  getLang,
+  metricLabel,
+  months,
+  setLang,
+  t,
+  weekdays,
+  type Lang,
+} from "./i18n";
 import { fetchGamesByIds } from "./igdb";
 import {
   HREJ_COVER_HEIGHT,
@@ -36,12 +53,6 @@ import {
 const coverUrl = (imageId: string) =>
   `https://images.igdb.com/igdb/image/upload/t_cover_big_2x/${imageId}.jpg`;
 
-const dayFormat = new Intl.DateTimeFormat(locale, { dateStyle: "long" });
-const monthFormat = new Intl.DateTimeFormat(locale, {
-  month: "long",
-  year: "numeric",
-});
-
 /**
  * Datum vypisujeme jen tak presne, jak ho IGDB zna. U ctvrtletnich vydani je
  * timestamp posledni den kvartalu, takze bez `date_format` by z „Q1 2027“
@@ -56,8 +67,8 @@ const releaseDate = (game: Game) => {
     return `Q${precision - 2} ${date.getFullYear()}`;
   }
   if (precision === 2) return String(date.getFullYear());
-  if (precision === 1) return monthFormat.format(date);
-  return dayFormat.format(date);
+  if (precision === 1) return formatMonthYear(date);
+  return formatDay(date);
 };
 
 /** Radek detailu; prazdne hodnoty se nevykresli, aby karta nebyla plna pomlcek. */
@@ -916,7 +927,7 @@ function CalendarMonth({
   return (
     <>
       <div className="calendar">
-        {WEEKDAYS.map((day) => (
+        {weekdays().map((day: string) => (
           <div key={day} className="cal-head">
             {day}
           </div>
@@ -1001,17 +1012,17 @@ function CalendarView({
       ? null
       : new Date(game.first_release_date * 1000).getUTCMonth() + 1;
 
-  const months = month
+  const shownMonths = month
     ? [month]
     : Array.from({ length: 12 }, (_, index) => index + 1);
 
   return (
     <>
-      {months.map((current) => (
+      {shownMonths.map((current) => (
         <section key={current} className="cal-month">
           {month === null && (
             <h2 className="cal-month-title">
-              {MONTHS[current - 1]} {year}
+              {months()[current - 1]} {year}
             </h2>
           )}
           <CalendarMonth
@@ -1082,6 +1093,153 @@ function MarkButtons({
         <BulbIcon />
       </button>
     </>
+  );
+}
+
+/** Prepinac s pevnou nabidkou — pouzivame ho na zobrazeni i na filtr znacek. */
+function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string; title?: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="segmented" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={option.value === value}
+          title={option.title}
+          /* U ikonek je popisek jen znak, cteni nahlas by z nej nic nedalo. */
+          aria-label={option.title}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Nastaveni, ktera clovek meni zridka — jazyk, rezim, razeni a redakcni
+ * nastroje. V liste by jen zabiraly misto, tak jsou pod ozubenym kolem.
+ */
+function SettingsMenu({
+  lang,
+  onLang,
+  theme,
+  onTheme,
+  metrics,
+  sortBy,
+  onSort,
+  tools,
+  pinned = false,
+}: {
+  lang: Lang;
+  onLang: (lang: Lang) => void;
+  theme: Theme | null;
+  onTheme: (theme: Theme | null) => void;
+  /** Prazdne = neni podle ceho radit, radek se nezobrazi. */
+  metrics: string[];
+  sortBy: string;
+  onSort: (value: string) => void;
+  /** Redakcni nastroje na konci panelu (jen pro EDITOR_TOOLS). */
+  tools?: ReactNode;
+  /** Nastroj neco rozdelal — panel nesmi zmizet, jinak by se prace ztratila. */
+  pinned?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const holder = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open || pinned) return;
+    const close = (event: MouseEvent) => {
+      if (!holder.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open, pinned]);
+
+  return (
+    <div className="settings" ref={holder}>
+      <button
+        type="button"
+        className="settings-button"
+        aria-expanded={open}
+        aria-label={t("settings")}
+        title={t("settings")}
+        onClick={() => setOpen((value) => !value)}
+      >
+        ⚙
+      </button>
+
+      {open && (
+        <div className="settings-panel">
+          <div className="setting">
+            <span className="field-label">{t("language")}</span>
+            <Segmented
+              label={t("language")}
+              value={lang}
+              options={[
+                { value: "cs", label: "Česky" },
+                { value: "en", label: "English" },
+              ]}
+              onChange={onLang}
+            />
+          </div>
+
+          <div className="setting">
+            <span className="field-label">{t("mode")}</span>
+            <Segmented
+              label={t("mode")}
+              value={theme ?? "system"}
+              options={[
+                { value: "light", label: t("modeLight") },
+                { value: "dark", label: t("modeDark") },
+                { value: "system", label: t("modeSystem") },
+              ]}
+              onChange={(value) =>
+                onTheme(value === "system" ? null : (value as Theme))
+              }
+            />
+          </div>
+
+          {metrics.length > 0 && (
+            <div className="setting">
+              <span className="field-label">{t("sortLabel")}</span>
+              <select
+                value={metrics.includes(sortBy) ? sortBy : "hypes"}
+                aria-label={t("sortLabel")}
+                onChange={(event) => onSort(event.target.value)}
+              >
+                <option value="hypes">{t("followers")}</option>
+                {metrics.map((label) => (
+                  <option key={label} value={label}>
+                    {metricLabel(label)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {tools && <div className="setting setting-tools">{tools}</div>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1257,11 +1415,14 @@ function CompareButton({
   games,
   period,
   periodLabel,
+  onBusy,
 }: {
   games: Game[];
   /** Druha faze projde kalendar Hrej jen za tohle obdobi. */
   period: Period;
   periodLabel: string;
+  /** Bezi porovnani nebo je otevreny vysledek — nadrizeny to musi vedet. */
+  onBusy?: (busy: boolean) => void;
 }) {
   const [state, setState] = useState<"idle" | "running" | "open" | "failed">(
     "idle",
@@ -1280,6 +1441,10 @@ function CompareButton({
     if (state === "open") dialog.current?.showModal();
     else dialog.current?.close();
   }, [state]);
+
+  useEffect(() => {
+    onBusy?.(state !== "idle");
+  }, [state, onBusy]);
 
   return (
     <>
@@ -1308,7 +1473,7 @@ function CompareButton({
       >
         {state === "running"
           ? `Porovnávám ${progress.done}/${progress.total}…`
-          : "Porovnat"}
+          : "Porovnat s Hrej"}
       </button>
 
       <dialog
@@ -1482,7 +1647,7 @@ function comparePeriod(view: View): Period {
 
 const periodLabel = (view: View) =>
   view.kind === "month"
-    ? `${MONTHS[view.month - 1]} ${view.year}`
+    ? `${months()[view.month - 1]} ${view.year}`
     : view.kind === "year" || view.kind === "undated"
       ? String(view.year)
       : "od dneška dál";
@@ -1509,6 +1674,13 @@ function App() {
   const [asCalendar, setAsCalendar] = useState(false);
   /** `null` = podle systemu, dokud si clovek nevybere. */
   const [theme, setTheme] = useState<Theme | null>(loadTheme);
+  /** Jazyk drzime ve stavu, aby prepnuti prekreslilo cely strom. */
+  const [lang, setLangState] = useState<Lang>(getLang);
+
+  const changeLang = (next: Lang) => {
+    setLang(next);
+    setLangState(next);
+  };
 
   useEffect(() => {
     applyTheme(theme);
@@ -1519,6 +1691,8 @@ function App() {
   /** "all" = vse, "fav" = jen srdicko, "both" = srdicko i zajima me. */
   const [markFilter, setMarkFilter] = useState<"all" | "fav" | "both">("all");
   const [page, setPage] = useState(1);
+  /** Porovnani bezi nebo ma otevreny vysledek — panel nastaveni musi zustat. */
+  const [comparing, setComparing] = useState(false);
   /** Oznacene hry stazene podle id — nemusi byt v aktualnim vypisu. */
   const [markedGames, setMarkedGames] = useState<Game[]>([]);
 
@@ -1687,15 +1861,6 @@ function App() {
     <>
       <header className="header">
         <div className="header-inner">
-          {/* Ve vysledcich hledani by porovnani slo proti necemu jinemu. */}
-          {EDITOR_TOOLS && view.kind !== "search" && (
-            <CompareButton
-              games={games}
-              period={comparePeriod(view)}
-              periodLabel={periodLabel(view)}
-            />
-          )}
-
           <div className="period">
             <select
               /* Bez zvoleneho obdobi rok nic neovlivnuje, proto "-". */
@@ -1742,7 +1907,8 @@ function App() {
               {/* Prvni volba filtr rusi, proto ma nazev, ne placeholder. */}
               <option value="">{t("noPeriod")}</option>
               <option value="year">{t("wholeYear")}</option>
-              {MONTHS.map((_, index) => index + 1)
+              {months()
+                .map((_, index) => index + 1)
                 // V aktualnim roce nenabizime mesice, ktere uz probehly.
                 .filter(
                   (month) =>
@@ -1750,50 +1916,34 @@ function App() {
                 )
                 .map((month) => (
                   <option key={month} value={month}>
-                    {MONTHS[month - 1]}
+                    {months()[month - 1]}
                   </option>
                 ))}
               <option value="undated">{t("undated")}</option>
             </select>
 
-            <button
-              type="button"
-              className="view-toggle"
-              aria-pressed={asCalendar}
-              onClick={toggleCalendar}
-            >
-              {asCalendar ? t("list") : t("calendar")}
-            </button>
+            <Segmented
+              label={t("calendar")}
+              value={asCalendar ? "calendar" : "list"}
+              options={[
+                { value: "list", label: t("list") },
+                { value: "calendar", label: t("calendar") },
+              ]}
+              onChange={(value) => {
+                if ((value === "calendar") !== asCalendar) toggleCalendar();
+              }}
+            />
 
-            <select
+            <Segmented
+              label={t("marksLabel")}
               value={markFilter}
-              aria-label={t("marksLabel")}
-              onChange={(event) =>
-                setMarkFilter(event.target.value as "all" | "fav" | "both")
-              }
-            >
-              <option value="all">{t("marksAll")}</option>
-              <option value="fav">{t("marksFav")}</option>
-              <option value="both">{t("marksBoth")}</option>
-            </select>
-
-            {/* Metriky zna jen mesicni vypis, jinde neni podle ceho radit. */}
-            {view.kind !== "upcoming" &&
-              view.kind !== "search" &&
-              metrics.length > 0 && (
-                <select
-                  value={metrics.includes(sortBy) ? sortBy : "hypes"}
-                  aria-label={t("sortLabel")}
-                  onChange={(event) => setSortBy(event.target.value)}
-                >
-                  <option value="hypes">{`${t("sortBy")}: ${t("followers")}`}</option>
-                  {metrics.map((label) => (
-                    <option key={label} value={label}>
-                      {`${t("sortBy")}: ${metricLabel(label)}`}
-                    </option>
-                  ))}
-                </select>
-              )}
+              options={[
+                { value: "all", label: t("marksAll") },
+                { value: "fav", label: "♥", title: t("marksFav") },
+                { value: "both", label: "♥+💡", title: t("marksBoth") },
+              ]}
+              onChange={setMarkFilter}
+            />
           </div>
 
           <form
@@ -1818,17 +1968,29 @@ function App() {
             <button type="submit">{t("search")}</button>
           </form>
 
-          <button
-            type="button"
-            className="theme-toggle"
-            title={currentTheme(theme) === "dark" ? t("toDay") : t("toNight")}
-            aria-label={t("themeLabel")}
-            onClick={() =>
-              setTheme(currentTheme(theme) === "dark" ? "light" : "dark")
+          <SettingsMenu
+            lang={lang}
+            onLang={changeLang}
+            theme={theme}
+            onTheme={setTheme}
+            metrics={
+              view.kind !== "upcoming" && view.kind !== "search" ? metrics : []
             }
-          >
-            {currentTheme(theme) === "dark" ? "☀" : "☾"}
-          </button>
+            sortBy={sortBy}
+            onSort={setSortBy}
+            pinned={comparing}
+            tools={
+              /* Ve vysledcich hledani by porovnani slo proti necemu jinemu. */
+              EDITOR_TOOLS && view.kind !== "search" ? (
+                <CompareButton
+                  games={games}
+                  period={comparePeriod(view)}
+                  periodLabel={periodLabel(view)}
+                  onBusy={setComparing}
+                />
+              ) : undefined
+            }
+          />
         </div>
       </header>
 
