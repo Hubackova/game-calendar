@@ -10,12 +10,18 @@ export type View =
   | { kind: "search"; term: string }
   | { kind: "month"; year: number; month: number }
   | { kind: "year"; year: number }
-  /** Hry, u kterych IGDB zna jen rok, kvartal nebo nic. */
-  | { kind: "undated"; year: number };
+  /** Hry, u kterych IGDB zna jen rok, kvartal nebo nic; `null` = vsechny roky. */
+  | { kind: "undated"; year: number | null };
 
-/** Ma vypis navazany rok? Bez nej se v selectu zobrazuje "-". */
-export const hasPeriod = (view: View): view is Extract<View, { year: number }> =>
-  view.kind === "month" || view.kind === "year" || view.kind === "undated";
+/** Rok vypisu, nebo `null` — tehdy je v selectu „vše“ / „bez data“. */
+export function viewYear(view: View): number | null {
+  if (view.kind === "month" || view.kind === "year") return view.year;
+  if (view.kind === "undated") return view.year;
+  return null;
+}
+
+export const CURRENT_YEAR = new Date().getFullYear();
+export const CURRENT_MONTH = new Date().getMonth() + 1;
 
 /** Nazvy parametru jsou cesky — adresa je videt a ma byt citelna. */
 const YEAR = "rok";
@@ -26,9 +32,23 @@ const LAYOUT = "pohled";
 
 const UNDATED = "bez-data";
 const WHOLE_YEAR = "rok";
-const CALENDAR = "kalendar";
+const ANYTIME = "kdykoliv";
+const LIST = "seznam";
 
 export type UrlState = { view: View; asCalendar: boolean };
+
+/** Co uvidi clovek, ktery prijde na „/“ — kalendar aktualniho mesice. */
+const defaultView = (): View => ({
+  kind: "month",
+  year: CURRENT_YEAR,
+  month: CURRENT_MONTH,
+});
+
+const isDefault = (view: View, asCalendar: boolean) =>
+  asCalendar &&
+  view.kind === "month" &&
+  view.year === CURRENT_YEAR &&
+  view.month === CURRENT_MONTH;
 
 /**
  * Cteni je zamerne tolerantni: co adresa nedava, doplni vychozi stav. Rucne
@@ -40,31 +60,40 @@ export function parseUrl(search: string): UrlState {
   const month = Number(params.get(MONTH));
   const period = params.get(PERIOD);
   const term = params.get(SEARCH)?.trim();
-  const asCalendar = params.get(LAYOUT) === CALENDAR;
+  /* Mrizka je vychozi zobrazeni, seznam se proto uvadi v adrese. */
+  const asCalendar = params.get(LAYOUT) !== LIST;
 
   const hasYear = Number.isInteger(year) && year > 1970 && year < 2100;
+
+  if (term) return { view: { kind: "search", term }, asCalendar: false };
+  if (period === ANYTIME) return { view: { kind: "upcoming" }, asCalendar: false };
 
   if (hasYear && Number.isInteger(month) && month >= 1 && month <= 12) {
     return { view: { kind: "month", year, month }, asCalendar };
   }
-  if (hasYear && period === UNDATED) {
+  if (period === UNDATED) {
     // Mrizka umi jen mesic a rok, „bez data“ zadne datum nema.
-    return { view: { kind: "undated", year }, asCalendar: false };
+    return {
+      view: { kind: "undated", year: hasYear ? year : null },
+      asCalendar: false,
+    };
   }
   if (hasYear) return { view: { kind: "year", year }, asCalendar };
-  if (term) return { view: { kind: "search", term }, asCalendar: false };
 
-  return { view: { kind: "upcoming" }, asCalendar: false };
+  return { view: defaultView(), asCalendar };
 }
 
 /**
- * Adresa pro dany stav. Vychozi vypis zustava na cistem „/“, aby se hlavni
- * stranka neindexovala pod dvema adresami.
+ * Adresa pro dany stav. Vychozi zobrazeni zustava na cistem „/“, aby se
+ * hlavni stranka neindexovala pod dvema adresami — a aby odkaz na „/“ ukazal
+ * i za pul roku aktualni mesic.
  *
  * Znacky ani razeni v URL zamerne nejsou: znacky si kazdy drzi ve svem
  * prohlizeci, takze `?znacky=oblibene` by prijemci odkazu ukazalo prazdno.
  */
 export function urlFor(view: View, asCalendar: boolean): string {
+  if (isDefault(view, asCalendar)) return "/";
+
   const params = new URLSearchParams();
 
   if (view.kind === "month") {
@@ -74,13 +103,19 @@ export function urlFor(view: View, asCalendar: boolean): string {
     params.set(YEAR, String(view.year));
     params.set(PERIOD, WHOLE_YEAR);
   } else if (view.kind === "undated") {
-    params.set(YEAR, String(view.year));
+    if (view.year != null) params.set(YEAR, String(view.year));
     params.set(PERIOD, UNDATED);
   } else if (view.kind === "search") {
     params.set(SEARCH, view.term);
+  } else {
+    params.set(PERIOD, ANYTIME);
   }
 
-  if (asCalendar) params.set(LAYOUT, CALENDAR);
+  /* Mrizka je vychozi, takze se do adresy pise jen odchylka od ni — a jen
+     tam, kde mrizka vubec jde: hledani, „vse“ ani „bez data“ ji nemaji. */
+  if (!asCalendar && (view.kind === "month" || view.kind === "year")) {
+    params.set(LAYOUT, LIST);
+  }
 
   const query = params.toString();
   return query ? `/?${query}` : "/";

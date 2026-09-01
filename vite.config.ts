@@ -335,8 +335,9 @@ function seoPlugin(siteUrl: string): Plugin {
       // ukazovala na adresy, ktere aplikace sama nikdy nevytvori.
       const today = new Date();
       const lastmod = today.toISOString().slice(0, 10);
+      // „/“ uz je kalendar aktualniho mesice, dalsi mesice zaciname od pristiho.
       const paths = ["/"];
-      for (let offset = 0; offset < 12; offset += 1) {
+      for (let offset = 1; offset <= 12; offset += 1) {
         const month = new Date(today.getFullYear(), today.getMonth() + offset);
         paths.push(`/?rok=${month.getFullYear()}&mesic=${month.getMonth() + 1}`);
       }

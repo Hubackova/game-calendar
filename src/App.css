@@ -794,7 +794,8 @@
 }
 
 .cal-day {
-  min-height: 7.5rem;
+  /* Vejde se rada vetsich obalek (76 px na sirku, tedy ~101 px na vysku). */
+  min-height: 8.5rem;
   padding: 0.3rem 0.35rem;
   background: var(--bg);
 }
@@ -944,7 +945,7 @@
 @media (max-width: 700px) {
   /* Sedm sloupcu na uzkem displeji: mensi obalky i nizsi policka. */
   .cal-day {
-    min-height: 4.5rem;
+    min-height: 5rem;
     padding: 0.2rem;
   }
 
@@ -958,7 +959,7 @@
 
   .cal-game img {
     /* Sirka z atributu se prebiji tady, vysku dopocita pomer stran. */
-    width: 38px;
+    width: 44px;
     height: auto;
   }
 
@@ -980,7 +981,7 @@
 
 @media (max-width: 460px) {
   .cal-game img {
-    width: 30px;
+    width: 34px;
   }
 
   .cal-number {

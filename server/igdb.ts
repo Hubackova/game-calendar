@@ -36,6 +36,10 @@ const YEAR_LIMIT = 100;
  */
 const BASE_GAME_ONLY = "version_parent = null";
 
+const CURRENT_YEAR = new Date().getFullYear();
+/** Jak daleko dopredu koukat, kdyz se hry bez data neomezuji rokem. */
+const UNDATED_SPAN_YEARS = 8;
+
 /** IGDB id cestiny v /languages. */
 const CZECH_LANGUAGE_ID = 4;
 /** IGDB id organizace PEGI v /age_rating_organizations. */
@@ -365,10 +369,16 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
   /**
    * Hry, u kterych IGDB zna jen rok, kvartal nebo vubec nic (`TBD`).
    * Do konkretniho mesice je zaradit nelze, maji proto vlastni vypis.
+   *
+   * Bez roku bereme vsechno od dneska dal — hry s hrubym datem jsou casto
+   * ohlasene na nekolik let dopredu a delit je po rocich nema smysl.
    */
-  async function getUndatedGames(year: number): Promise<unknown[]> {
-    const start = Math.floor(Date.UTC(year, 0, 1) / 1000);
-    const end = Math.floor(Date.UTC(year + 1, 0, 1) / 1000);
+  async function getUndatedGames(year: number | null): Promise<unknown[]> {
+    const now = Math.floor(Date.now() / 1000);
+    const start = year != null ? Math.floor(Date.UTC(year, 0, 1) / 1000) : now;
+    const end = Math.floor(
+      Date.UTC((year ?? CURRENT_YEAR + UNDATED_SPAN_YEARS) + 1, 0, 1) / 1000,
+    );
     const candidates = await fetchCandidates(start, end);
 
     return rankGames(
@@ -436,7 +446,7 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
     const term = params.q?.trim();
 
     if (params.ids) return getGamesByIds(params.ids);
-    if (hasYear && params.undated === "1") return getUndatedGames(year);
+    if (params.undated === "1") return getUndatedGames(hasYear ? year : null);
     if (hasYear && params.whole === "1") return getYearGames(year);
     if (hasYear && month >= 1 && month <= 12) {
       return getMonthGames(year, month);

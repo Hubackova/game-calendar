@@ -24,7 +24,14 @@ import {
   type Lang,
 } from "./i18n";
 import { fetchGamesByIds } from "./igdb";
-import { hasPeriod, parseUrl, urlFor, type View } from "./url";
+import {
+  CURRENT_MONTH,
+  CURRENT_YEAR,
+  parseUrl,
+  urlFor,
+  viewYear,
+  type View,
+} from "./url";
 import { countPageview } from "./analytics";
 import {
   HREJ_COVER_HEIGHT,
@@ -805,11 +812,11 @@ function CalendarEntry({
       <button
         type="button"
         className="cal-open"
-        title={`${game.name} — ${releaseDate(game)}`}
+        title={game.name}
         onClick={() => onOpen(game)}
       >
         {game.cover ? (
-          <img src={coverUrl(game.cover.image_id)} alt={game.name} width={64} />
+          <img src={coverUrl(game.cover.image_id)} alt={game.name} width={76} />
         ) : (
           // Bez obalky by policko zustalo prazdne, tady nazev smysl ma.
           <span className="cal-noimg">{game.name}</span>
@@ -1628,8 +1635,9 @@ function comparePeriod(view: View): Period {
       to: `${nextYear}-${pad2(nextMonth)}-01`,
     };
   }
-  if (view.kind === "year" || view.kind === "undated") {
-    return { from: `${view.year}-01-01`, to: `${view.year + 1}-01-01` };
+  const year = viewYear(view);
+  if (year != null) {
+    return { from: `${year}-01-01`, to: `${year + 1}-01-01` };
   }
   return null;
 }
@@ -1637,9 +1645,7 @@ function comparePeriod(view: View): Period {
 const periodLabel = (view: View) =>
   view.kind === "month"
     ? `${months()[view.month - 1]} ${view.year}`
-    : view.kind === "year" || view.kind === "undated"
-      ? String(view.year)
-      : "od dneška dál";
+    : (viewYear(view)?.toString() ?? "od dneška dál");
 
 /**
  * Titulek stranky. Meni se s vypisem, takze zalozka, historie prohlizece
@@ -1652,7 +1658,8 @@ function pageTitle(view: View): string {
   }
   if (view.kind === "year") return `${view.year} — ${brand}`;
   if (view.kind === "undated") {
-    return `${view.year}: ${t("undated")} — ${brand}`;
+    const scope = view.year != null ? `${view.year}: ` : "";
+    return `${scope}${t("undated")} — ${brand}`;
   }
   if (view.kind === "search") return `${view.term} — ${brand}`;
   return `${brand} — ${t("tagline")}`;
@@ -1661,8 +1668,6 @@ function pageTitle(view: View): string {
 /** Kolik her ukazat na jedne strance seznamu. */
 const PAGE_SIZE = 20;
 
-const CURRENT_YEAR = new Date().getFullYear();
-const CURRENT_MONTH = new Date().getMonth() + 1;
 /* Filtrovat do minulosti nema smysl, kalendar se diva dopredu. */
 const YEARS = Array.from({ length: 8 }, (_, index) => CURRENT_YEAR + index);
 
@@ -1678,9 +1683,7 @@ function App() {
     initial.view.kind === "search" ? initial.view.term : "",
   );
   /** Rok drzime i mimo `view`, aby sel vybrat driv nez mesic. */
-  const [year, setYear] = useState(
-    hasPeriod(initial.view) ? initial.view.year : CURRENT_YEAR,
-  );
+  const [year, setYear] = useState(viewYear(initial.view) ?? CURRENT_YEAR);
   /** "hypes" = poradi ze serveru, jinak nazev popularitni metriky. */
   const [sortBy, setSortBy] = useState("hypes");
   /** Kalendarni mrizka dava smysl jen nad jednim mesicem. */
@@ -1777,7 +1780,12 @@ function App() {
       return precise && date.getUTCFullYear() === view.year;
     }
     if (view.kind === "undated") {
-      return !precise && date.getUTCFullYear() === view.year;
+      return (
+        !precise &&
+        (view.year == null
+          ? timestamp * 1000 > Date.now()
+          : date.getUTCFullYear() === view.year)
+      );
     }
     if (view.kind === "upcoming") return timestamp * 1000 > Date.now();
     return false;
@@ -1826,7 +1834,7 @@ function App() {
         : current.kind === "year"
           ? `/api/games?year=${current.year}&whole=1`
           : current.kind === "undated"
-            ? `/api/games?year=${current.year}&undated=1`
+            ? `/api/games?undated=1${current.year != null ? `&year=${current.year}` : ""}`
             : current.kind === "search"
               ? `/api/games?q=${encodeURIComponent(current.term)}`
               : "/api/games";
@@ -1864,15 +1872,41 @@ function App() {
   }, [marks]);
 
   /* Bez zvoleneho obdobi se ridime naposledy vybranym rokem. */
-  const selectedYear = hasPeriod(view) ? view.year : year;
+  const selectedYear = viewYear(view) ?? year;
 
+  /** Obdobi uvnitr zvoleneho roku; „vse“ a „bez data“ napric roky resi rok. */
   const selectPeriod = (value: string) => {
-    // Mrizka umi mesic i cely rok; „bez data“ a vychozi vypis uz ne.
-    if (value === "" || value === "undated") setAsCalendar(false);
-    if (value === "undated") return setView({ kind: "undated", year });
+    // Mrizka umi mesic i cely rok, „bez data“ zadne datum nema.
+    if (value === "undated") {
+      setAsCalendar(false);
+      return setView({ kind: "undated", year });
+    }
     if (value === "year") return setView({ kind: "year", year });
-    const month = Number(value);
-    setView(month ? { kind: "month", year, month } : { kind: "upcoming" });
+    setView({ kind: "month", year, month: Number(value) });
+  };
+
+  /** Prvni select: „vše“ a „bez data“ nejsou rok, ale rozsah bez roku. */
+  const selectYear = (value: string) => {
+    setInputValue("");
+    if (value === "") {
+      setAsCalendar(false);
+      return setView({ kind: "upcoming" });
+    }
+    if (value === "undated") {
+      setAsCalendar(false);
+      return setView({ kind: "undated", year: null });
+    }
+
+    const picked = Number(value);
+    setYear(picked);
+    if (view.kind === "month") {
+      setView({ kind: "month", year: picked, month: view.month });
+    } else if (view.kind === "undated") {
+      setView({ kind: "undated", year: picked });
+    } else {
+      // Vyber roku bez jineho obdobi znamena „ukaz mi ten rok“.
+      setView({ kind: "year", year: picked });
+    }
   };
 
   /** Kalendar potrebuje mesic — kdyz zadny neni, vezmeme nejblizsi povoleny. */
@@ -1913,25 +1947,16 @@ function App() {
         <div className="header-inner">
           <div className="period">
             <select
-              /* Bez zvoleneho obdobi rok nic neovlivnuje, proto "-". */
-              value={hasPeriod(view) ? view.year : ""}
+              value={
+                viewYear(view) ??
+                (view.kind === "undated" ? "undated" : "")
+              }
               aria-label={t("yearLabel")}
-              onChange={(event) => {
-                if (!event.target.value) return setView({ kind: "upcoming" });
-
-                const picked = Number(event.target.value);
-                setYear(picked);
-                if (view.kind === "month") {
-                  setView({ kind: "month", year: picked, month: view.month });
-                } else if (view.kind === "undated") {
-                  setView({ kind: "undated", year: picked });
-                } else {
-                  // Vyber roku bez obdobi znamena „ukaz mi ten rok“.
-                  setView({ kind: "year", year: picked });
-                }
-              }}
+              onChange={(event) => selectYear(event.target.value)}
             >
-              <option value="">–</option>
+              {/* Bez roku: vsechno chystane, nebo vsechno bez presneho data. */}
+              <option value="">{t("noPeriod")}</option>
+              <option value="undated">{t("undatedAll")}</option>
               {YEARS.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -1939,14 +1964,14 @@ function App() {
               ))}
             </select>
             <select
+              /* Bez roku neni co zuzovat — obdobi patri vzdy k roku. */
+              disabled={viewYear(view) == null}
               value={
                 view.kind === "month"
                   ? view.month
                   : view.kind === "undated"
                     ? "undated"
-                    : view.kind === "year"
-                      ? "year"
-                      : ""
+                    : "year"
               }
               aria-label={t("periodLabel")}
               onChange={(event) => {
@@ -1954,8 +1979,6 @@ function App() {
                 selectPeriod(event.target.value);
               }}
             >
-              {/* Prvni volba filtr rusi, proto ma nazev, ne placeholder. */}
-              <option value="">{t("noPeriod")}</option>
               <option value="year">{t("wholeYear")}</option>
               {months()
                 .map((_, index) => index + 1)
