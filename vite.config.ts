@@ -331,22 +331,78 @@ function seoPlugin(siteUrl: string): Plugin {
         ].join("\n"),
       });
 
+      // Parametry musi odpovidat `urlFor()` v src/url.ts, jinak by sitemapa
+      // ukazovala na adresy, ktere aplikace sama nikdy nevytvori.
+      const today = new Date();
+      const lastmod = today.toISOString().slice(0, 10);
+      const paths = ["/"];
+      for (let offset = 0; offset < 12; offset += 1) {
+        const month = new Date(today.getFullYear(), today.getMonth() + offset);
+        paths.push(`/?rok=${month.getFullYear()}&mesic=${month.getMonth() + 1}`);
+      }
+      paths.push(`/?rok=${today.getFullYear()}&obdobi=rok`);
+      paths.push(`/?rok=${today.getFullYear() + 1}&obdobi=rok`);
+
       this.emitFile({
         type: "asset",
         fileName: "sitemap.xml",
         source: [
           '<?xml version="1.0" encoding="UTF-8"?>',
           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-          "  <url>",
-          `    <loc>${base}/</loc>`,
-          `    <lastmod>${new Date().toISOString().slice(0, 10)}</lastmod>`,
-          "    <changefreq>daily</changefreq>",
-          "  </url>",
+          ...paths.flatMap((path) => [
+            "  <url>",
+            // V XML musi byt `&` escapovany, jinak je sitemapa nevalidni.
+            `    <loc>${base}${path.replaceAll("&", "&amp;")}</loc>`,
+            `    <lastmod>${lastmod}</lastmod>`,
+            "    <changefreq>daily</changefreq>",
+            "  </url>",
+          ]),
           "</urlset>",
           "",
         ].join("\n"),
       });
     },
+  };
+}
+
+/**
+ * GoatCounter — merit chceme jen produkci, takze v devu se tag nevklada vubec.
+ * Bez kodu webu je plugin necinny, aby build fungoval i bez nej.
+ *
+ * (Cloudflare Web Analytics neslo pouzit: sdilene sufixy jako `.netlify.app`
+ * si u nich nejde zaregistrovat.)
+ */
+/**
+ * Kod webu neni tajny — je videt v HTML kazde stranky, takze ho drzime tady
+ * a env promenna slouzi jen k prepnuti na jiny ucet nebo k vypnuti (`0`).
+ */
+const GOATCOUNTER_SITE = "next-games";
+
+function analyticsPlugin(site = GOATCOUNTER_SITE): Plugin {
+  // `GOATCOUNTER_SITE=0` merenim vypne, treba na testovacim deployi.
+  const code = site.trim() === "0" ? "" : site.trim();
+  // Prijmeme i celou adresu endpointu, kdyby ucet mel vlastni domenu.
+  const endpoint = code.includes("//")
+    ? code.replace(/\/+$/, "")
+    : `https://${code}.goatcounter.com/count`;
+
+  return {
+    name: "goatcounter",
+    apply: "build",
+    transformIndexHtml: () =>
+      code
+        ? [
+            {
+              tag: "script",
+              attrs: {
+                async: true,
+                src: "https://gc.zgo.at/count.js",
+                "data-goatcounter": endpoint,
+              },
+              injectTo: "body" as const,
+            },
+          ]
+        : [],
   };
 }
 
@@ -361,6 +417,7 @@ export default defineConfig(({ mode }) => {
       hrejPlugin(env.HREJ_API_TOKEN),
       geminiPlugin(env.GEMINI_API_KEY),
       seoPlugin(env.SITE_URL || env.URL || "http://localhost:5173"),
+      analyticsPlugin(env.GOATCOUNTER_SITE),
     ],
   };
 });

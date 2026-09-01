@@ -24,6 +24,8 @@ import {
   type Lang,
 } from "./i18n";
 import { fetchGamesByIds } from "./igdb";
+import { hasPeriod, parseUrl, urlFor, type View } from "./url";
+import { countPageview } from "./analytics";
 import {
   HREJ_COVER_HEIGHT,
   HREJ_COVER_WIDTH,
@@ -1614,19 +1616,6 @@ function CompareButton({
   );
 }
 
-/** Co je zrovna vypsane — kazdy stav ma vlastni dotaz na /api/games. */
-type View =
-  | { kind: "upcoming" }
-  | { kind: "search"; term: string }
-  | { kind: "month"; year: number; month: number }
-  | { kind: "year"; year: number }
-  /** Hry, u kterych IGDB zna jen rok, kvartal nebo nic. */
-  | { kind: "undated"; year: number };
-
-/** Ma vypis navazany rok? Bez nej se v selectu zobrazuje "-". */
-const hasPeriod = (view: View): view is Extract<View, { year: number }> =>
-  view.kind === "month" || view.kind === "year" || view.kind === "undated";
-
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
 /** Obdobi pro druhou fazi porovnani — musi odpovidat tomu, co je vypsane. */
@@ -1652,6 +1641,23 @@ const periodLabel = (view: View) =>
       ? String(view.year)
       : "od dneška dál";
 
+/**
+ * Titulek stranky. Meni se s vypisem, takze zalozka, historie prohlizece
+ * i statistiky navstevnosti rozlisi „rijen 2026“ od hlavni stranky.
+ */
+function pageTitle(view: View): string {
+  const brand = t("brand");
+  if (view.kind === "month") {
+    return `${months()[view.month - 1]} ${view.year} — ${brand}`;
+  }
+  if (view.kind === "year") return `${view.year} — ${brand}`;
+  if (view.kind === "undated") {
+    return `${view.year}: ${t("undated")} — ${brand}`;
+  }
+  if (view.kind === "search") return `${view.term} — ${brand}`;
+  return `${brand} — ${t("tagline")}`;
+}
+
 /** Kolik her ukazat na jedne strance seznamu. */
 const PAGE_SIZE = 20;
 
@@ -1661,17 +1667,24 @@ const CURRENT_MONTH = new Date().getMonth() + 1;
 const YEARS = Array.from({ length: 8 }, (_, index) => CURRENT_YEAR + index);
 
 function App() {
+  /* Vychozi stav bere z adresy, aby sdileny odkaz otevrel spravny vypis. */
+  const initial = useMemo(() => parseUrl(window.location.search), []);
+
   const [games, setGames] = useState<Game[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<View>({ kind: "upcoming" });
-  const [inputValue, setInputValue] = useState("");
+  const [view, setView] = useState<View>(initial.view);
+  const [inputValue, setInputValue] = useState(
+    initial.view.kind === "search" ? initial.view.term : "",
+  );
   /** Rok drzime i mimo `view`, aby sel vybrat driv nez mesic. */
-  const [year, setYear] = useState(CURRENT_YEAR);
+  const [year, setYear] = useState(
+    hasPeriod(initial.view) ? initial.view.year : CURRENT_YEAR,
+  );
   /** "hypes" = poradi ze serveru, jinak nazev popularitni metriky. */
   const [sortBy, setSortBy] = useState("hypes");
   /** Kalendarni mrizka dava smysl jen nad jednim mesicem. */
-  const [asCalendar, setAsCalendar] = useState(false);
+  const [asCalendar, setAsCalendar] = useState(initial.asCalendar);
   /** `null` = podle systemu, dokud si clovek nevybere. */
   const [theme, setTheme] = useState<Theme | null>(loadTheme);
   /** Jazyk drzime ve stavu, aby prepnuti prekreslilo cely strom. */
@@ -1685,6 +1698,43 @@ function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  /* Zmena vypisu je novy krok v historii, aby fungovalo tlacitko zpet. */
+  const synced = useRef(false);
+  useEffect(() => {
+    const next = urlFor(view, asCalendar);
+    if (next !== window.location.pathname + window.location.search) {
+      // Prvni beh jen srovna adresu do kanonicke podoby, to neni navigace.
+      if (synced.current) window.history.pushState(null, "", next);
+      else window.history.replaceState(null, "", next);
+    }
+    synced.current = true;
+  }, [view, asCalendar]);
+
+  /* Prepnuti vypisu je novy pageview — uvodni nacteni si spocita count.js sam. */
+  const counted = useRef(false);
+  useEffect(() => {
+    if (counted.current) countPageview(urlFor(view, asCalendar));
+    counted.current = true;
+  }, [view, asCalendar]);
+
+  /* Zpet a vpred v prohlizeci: stav si vezmeme z adresy. */
+  useEffect(() => {
+    const restore = () => {
+      const state = parseUrl(window.location.search);
+      setView(state.view);
+      setAsCalendar(state.asCalendar);
+      setInputValue(state.view.kind === "search" ? state.view.term : "");
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+
+  /* Titulek a jazyk dokumentu — vidi je zalozky, historie i vyhledavace. */
+  useEffect(() => {
+    document.title = pageTitle(view);
+    document.documentElement.lang = lang;
+  }, [view, lang]);
 
   /** Znacky u her (srdicko / zarovka); drzi se v localStorage. */
   const [marks, setMarks] = useState<Map<number, Mark>>(loadMarks);

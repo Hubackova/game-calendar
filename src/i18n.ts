@@ -5,6 +5,7 @@
  */
 const cs = {
   brand: "Herní kalendář",
+  tagline: "chystané hry a data vydání",
   settings: "Nastavení",
   language: "Jazyk",
   mode: "Režim",
@@ -61,6 +62,7 @@ const cs = {
 
 const en: typeof cs = {
   brand: "Games calendar",
+  tagline: "upcoming games and release dates",
   settings: "Settings",
   language: "Language",
   mode: "Mode",
