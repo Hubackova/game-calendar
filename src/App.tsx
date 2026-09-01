@@ -11,6 +11,7 @@ import type { Game } from "./types";
 import { suggestDescription } from "./gemini";
 import { EDITOR_TOOLS } from "./config";
 import { loadMarks, saveMarks, type Mark } from "./favorites";
+import { introSeen, markIntroSeen } from "./intro";
 import { applyTheme, loadTheme, type Theme } from "./theme";
 import {
   formatDay,
@@ -18,6 +19,7 @@ import {
   getLang,
   metricLabel,
   months,
+  ogLocale,
   setLang,
   t,
   weekdays,
@@ -1105,6 +1107,54 @@ function MarkButtons({
   );
 }
 
+/**
+ * Kratke vysvetleni nad vypisem. Ukaze se napoprve a pak uz jen na vyzadani
+ * z nastaveni — znacky jinak nikdo neobjevi, protoze jsou to jen dve ikonky.
+ */
+function Intro({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    if (open) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [open]);
+
+  return (
+    <dialog ref={dialog} className="confirm intro" onClose={onClose}>
+      <h3>{t("introTitle")}</h3>
+      <div className="confirm-body">
+        <p>{t("introWhat")}</p>
+        <p>{t("introPeriod")}</p>
+
+        <p>{t("introMarks")}</p>
+        <ul className="intro-marks">
+          <li>
+            <span className="mark mark-fav-on" aria-hidden="true">
+              ♥
+            </span>
+            {t("introFav")}
+          </li>
+          <li>
+            <span className="mark mark-int-on" aria-hidden="true">
+              <BulbIcon />
+            </span>
+            {t("introInterest")}
+          </li>
+        </ul>
+        <p>{t("introOneMark")}</p>
+        <p>{t("introSettings")}</p>
+        <p className="intro-note">{t("introStorage")}</p>
+      </div>
+
+      <div className="confirm-actions">
+        <button type="button" className="primary" onClick={onClose}>
+          {t("introClose")}
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
 /** Prepinac s pevnou nabidkou — pouzivame ho na zobrazeni i na filtr znacek. */
 function Segmented<T extends string>({
   label,
@@ -1137,24 +1187,48 @@ function Segmented<T extends string>({
 }
 
 /**
+ * Prepinac dne a noci. V liste staci ikonka toho druheho rezimu — kliknuti
+ * prepne na nej a volba se ulozi. Vychozi je noc.
+ */
+function ThemeToggle({
+  theme,
+  onTheme,
+}: {
+  theme: Theme;
+  onTheme: (theme: Theme) => void;
+}) {
+  const next: Theme = theme === "dark" ? "light" : "dark";
+  const label = next === "dark" ? t("modeDark") : t("modeLight");
+
+  return (
+    <button
+      type="button"
+      className="theme-button"
+      aria-label={label}
+      title={label}
+      onClick={() => onTheme(next)}
+    >
+      {next === "dark" ? "🌙" : "☀"}
+    </button>
+  );
+}
+
+/**
  * Nastaveni, ktera clovek meni zridka — jazyk, rezim, razeni a redakcni
  * nastroje. V liste by jen zabiraly misto, tak jsou pod ozubenym kolem.
  */
 function SettingsMenu({
   lang,
   onLang,
-  theme,
-  onTheme,
   metrics,
   sortBy,
   onSort,
   tools,
   pinned = false,
+  onHelp,
 }: {
   lang: Lang;
   onLang: (lang: Lang) => void;
-  theme: Theme | null;
-  onTheme: (theme: Theme | null) => void;
   /** Prazdne = neni podle ceho radit, radek se nezobrazi. */
   metrics: string[];
   sortBy: string;
@@ -1163,6 +1237,8 @@ function SettingsMenu({
   tools?: ReactNode;
   /** Nastroj neco rozdelal — panel nesmi zmizet, jinak by se prace ztratila. */
   pinned?: boolean;
+  /** Znovu ukaze uvodni vysvetleni. */
+  onHelp: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const holder = useRef<HTMLDivElement>(null);
@@ -1211,22 +1287,6 @@ function SettingsMenu({
             />
           </div>
 
-          <div className="setting">
-            <span className="field-label">{t("mode")}</span>
-            <Segmented
-              label={t("mode")}
-              value={theme ?? "system"}
-              options={[
-                { value: "light", label: t("modeLight") },
-                { value: "dark", label: t("modeDark") },
-                { value: "system", label: t("modeSystem") },
-              ]}
-              onChange={(value) =>
-                onTheme(value === "system" ? null : (value as Theme))
-              }
-            />
-          </div>
-
           {metrics.length > 0 && (
             <div className="setting">
               <span className="field-label">{t("sortLabel")}</span>
@@ -1244,6 +1304,19 @@ function SettingsMenu({
               </select>
             </div>
           )}
+
+          <div className="setting setting-help">
+            <button
+              type="button"
+              className="inline-add"
+              onClick={() => {
+                setOpen(false);
+                onHelp();
+              }}
+            >
+              {t("howItWorks")}
+            </button>
+          </div>
 
           {tools && <div className="setting setting-tools">{tools}</div>}
         </div>
@@ -1665,6 +1738,45 @@ function pageTitle(view: View): string {
   return `${brand} — ${t("tagline")}`;
 }
 
+/**
+ * Popis stranky pro `<meta name="description">` a Open Graph. U vypisu za
+ * obdobi ma smysl obdobi jmenovat, u hledani zustava obecny.
+ */
+function pageDescription(view: View): string {
+  const period =
+    view.kind === "month"
+      ? `${months()[view.month - 1]} ${view.year}`
+      : view.kind === "year"
+        ? String(view.year)
+        : null;
+
+  return period
+    ? t("metaDescriptionPeriod").replace("{period}", period)
+    : t("metaDescription");
+}
+
+/**
+ * Meta tagy v `index.html` jsou staticky ceske, tady je srovname s aktualnim
+ * jazykem a vypisem. Scrapery socialnich siti JS nespousti, takze nahled
+ * odkazu zustane podle HTML — tohle je pro prohlizec a vyhledavace.
+ */
+function syncMeta(view: View): void {
+  const title = pageTitle(view);
+  const description = pageDescription(view);
+
+  const set = (selector: string, content: string) => {
+    document.head
+      .querySelector<HTMLMetaElement>(selector)
+      ?.setAttribute("content", content);
+  };
+
+  set('meta[name="description"]', description);
+  set('meta[property="og:title"]', title);
+  set('meta[property="og:description"]', description);
+  set('meta[property="og:site_name"]', t("brand"));
+  set('meta[property="og:locale"]', ogLocale());
+}
+
 /** Kolik her ukazat na jedne strance seznamu. */
 const PAGE_SIZE = 20;
 
@@ -1689,7 +1801,7 @@ function App() {
   /** Kalendarni mrizka dava smysl jen nad jednim mesicem. */
   const [asCalendar, setAsCalendar] = useState(initial.asCalendar);
   /** `null` = podle systemu, dokud si clovek nevybere. */
-  const [theme, setTheme] = useState<Theme | null>(loadTheme);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
   /** Jazyk drzime ve stavu, aby prepnuti prekreslilo cely strom. */
   const [lang, setLangState] = useState<Lang>(getLang);
 
@@ -1733,10 +1845,11 @@ function App() {
     return () => window.removeEventListener("popstate", restore);
   }, []);
 
-  /* Titulek a jazyk dokumentu — vidi je zalozky, historie i vyhledavace. */
+  /* Titulek, popis a jazyk dokumentu — vidi je zalozky, historie i vyhledavace. */
   useEffect(() => {
     document.title = pageTitle(view);
     document.documentElement.lang = lang;
+    syncMeta(view);
   }, [view, lang]);
 
   /** Znacky u her (srdicko / zarovka); drzi se v localStorage. */
@@ -1746,6 +1859,8 @@ function App() {
   const [page, setPage] = useState(1);
   /** Porovnani bezi nebo ma otevreny vysledek — panel nastaveni musi zustat. */
   const [comparing, setComparing] = useState(false);
+  /** Uvod se ukaze prvnimu navstevnikovi a pak uz jen z nastaveni. */
+  const [intro, setIntro] = useState(() => !introSeen());
   /** Oznacene hry stazene podle id — nemusi byt v aktualnim vypisu. */
   const [markedGames, setMarkedGames] = useState<Game[]>([]);
 
@@ -2041,16 +2156,16 @@ function App() {
             <button type="submit">{t("search")}</button>
           </form>
 
+          <ThemeToggle theme={theme} onTheme={setTheme} />
+
           <SettingsMenu
             lang={lang}
             onLang={changeLang}
-            theme={theme}
-            onTheme={setTheme}
-            metrics={
-              view.kind !== "upcoming" && view.kind !== "search" ? metrics : []
-            }
+            /* Prazdne u hledani, kde zebricky nejsou — radek se pak skryje. */
+            metrics={metrics}
             sortBy={sortBy}
             onSort={setSortBy}
+            onHelp={() => setIntro(true)}
             pinned={comparing}
             tools={
               /* Ve vysledcich hledani by porovnani slo proti necemu jinemu. */
@@ -2066,6 +2181,14 @@ function App() {
           />
         </div>
       </header>
+
+      <Intro
+        open={intro}
+        onClose={() => {
+          markIntroSeen();
+          setIntro(false);
+        }}
+      />
 
       <section className={asCalendar ? "games games-wide" : "games"}>
         {/* Jeden pruh na vsechna hlaseni — drzi vysku, takze stranka neposkakuje. */}

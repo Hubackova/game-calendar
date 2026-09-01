@@ -231,7 +231,60 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
       if (page.length < PAGE_SIZE) break;
     }
 
-    return shapeGames(games);
+    // I tady chceme zebricky, aby slo prepnout razeni jako u mesicniho vypisu.
+    const shaped = shapeGames(games) as { id: number }[];
+    const placements = await popularityPlacements(
+      shaped.map((game) => game.id),
+      shaped.length,
+    );
+
+    return shaped.map((game) => ({
+      ...game,
+      popularity: (placements.get(game.id) ?? []).sort(
+        (a, b) => a.rank - b.rank,
+      ),
+    }));
+  }
+
+  /**
+   * Umisteni her v popularitnich zebriccich. `hypes` pokryva jen cast titulu
+   * (v rijnu 2026 56 ze 160) a mine hry, ktere lidi sleduji jinde nez na IGDB.
+   */
+  async function popularityPlacements(
+    ids: number[],
+    perMetric: number,
+  ): Promise<Map<number, { label: string; rank: number }[]>> {
+    const placements = new Map<number, { label: string; rank: number }[]>();
+    if (!ids.length) return placements;
+
+    const ranked = await Promise.all(
+      POPULARITY_METRICS.map(
+        (metric) =>
+          query(
+            "popularity_primitives",
+            `fields game_id, value;
+             where popularity_type = ${metric.type} & game_id = (${ids});
+             sort value desc;
+             limit ${Math.min(perMetric, PAGE_SIZE)};`,
+          ) as Promise<{ game_id: number }[]>,
+      ),
+    );
+
+    const known = new Set(ids);
+    ranked.forEach((rows, index) => {
+      rows.forEach((row, position) => {
+        // Metriky mohou vratit i hru, ktera do naseho vyberu nepatri.
+        if (!known.has(row.game_id)) return;
+        const list = placements.get(row.game_id) ?? [];
+        list.push({
+          label: POPULARITY_METRICS[index].label,
+          rank: position + 1,
+        });
+        placements.set(row.game_id, list);
+      });
+    });
+
+    return placements;
   }
 
   /** Presnosti, ktere patri do konkretniho mesice: den a mesic. */
@@ -273,31 +326,9 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
       .slice(0, perMetric)
       .forEach((game) => selected.set(game.id, []));
 
-    const ranked = await Promise.all(
-      POPULARITY_METRICS.map(
-        (metric) =>
-          query(
-            "popularity_primitives",
-            `fields game_id, value;
-           where popularity_type = ${metric.type} & game_id = (${ids});
-           sort value desc;
-           limit ${perMetric};`,
-          ) as Promise<{ game_id: number }[]>,
-      ),
-    );
-
-    ranked.forEach((rows, index) => {
-      rows.forEach((row, position) => {
-        // Metriky mohou vratit i hru, ktera do naseho vyberu nepatri.
-        if (!selected.has(row.game_id) && !ids.includes(row.game_id)) return;
-        const placements = selected.get(row.game_id) ?? [];
-        placements.push({
-          label: POPULARITY_METRICS[index].label,
-          rank: position + 1,
-        });
-        selected.set(row.game_id, placements);
-      });
-    });
+    // Hra ze zebricku se do vypisu dostane i bez hypes.
+    const placements = await popularityPlacements(ids, perMetric);
+    placements.forEach((list, id) => selected.set(id, list));
 
     /** Nejlepsi umisteni napric metrikami — radi hry, ktere nemaji hypes. */
     const bestRank = (id: number) =>

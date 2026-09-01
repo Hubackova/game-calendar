@@ -35,6 +35,20 @@
       content="Herní kalendář — přehled chystaných her"
     />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!--
+      Rezim nastavime jeste pred prvnim vykreslenim, jinak by u lidi se svetlym
+      systemem probliklo svetle pozadi, nez se rozjede React. Vychozi je noc.
+    -->
+    <script>
+      try {
+        var saved = localStorage.getItem("theme");
+      } catch (error) {
+        saved = null;
+      }
+      document.documentElement.dataset.theme =
+        saved === "light" ? "light" : "dark";
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -56,6 +56,7 @@
 }
 
 .header-inner {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -391,8 +392,10 @@
   flex-direction: column;
 }
 
+/* Ztmaveni plus rozostreni pozadi — modal tak jasne odrizne zbytek stranky. */
 .confirm::backdrop {
-  background: rgb(0 0 0 / 0.4);
+  background: rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(4px);
 }
 
 .confirm h3 {
@@ -517,6 +520,12 @@
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+}
+
+/* Bez zvoleneho roku nema obdobi co zuzovat — at je videt, ze je neaktivni. */
+.period select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Datum, ktere na hreji prestalo platit. */
@@ -990,6 +999,60 @@
   }
 }
 
+/* ---------- uvodni vysvetleni ---------- */
+
+/* Zbytek vzhledu bere z `.confirm`, tady jen text a ikony znacek. */
+.intro {
+  width: min(34rem, 96vw);
+}
+
+.intro .confirm-body {
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.intro p {
+  margin: 0 0 0.7rem;
+}
+
+.intro-marks {
+  margin: 0 0 0.7rem;
+  padding: 0;
+  list-style: none;
+}
+
+.intro-marks li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+/* Ikony jsou tu jen na ukazku, klikaci verze je u kazde hry. */
+.intro-marks .mark {
+  display: inline-flex;
+  justify-content: center;
+  width: 1.2rem;
+  cursor: default;
+}
+
+.intro-note {
+  opacity: 0.75;
+}
+
+/* Odkaz na uvod stoji nad redakcnimi nastroji, oddeleny linkou. */
+.setting-help {
+  margin-top: -0.2rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.setting-help .inline-add {
+  width: 100%;
+  padding: 0.35rem;
+  font-size: 0.85rem;
+}
+
 /* ---------- oblibene ---------- */
 
 /* Aktivni srdce ma barvu, ne jiny znak — jinak by radek poskocil. */
@@ -1136,21 +1199,30 @@
   font-weight: 500;
 }
 
+/* Panel je ukotveny k lipe, ne k tlacitku — kdyz se lista zabali a ozubene
+   kolo skonci u leveho kraje, panel s `right: 0` by vylezl mimo obrazovku. */
 .settings {
-  position: relative;
+  position: static;
 }
 
-.header-inner .settings-button {
+.header-inner .settings-button,
+.header-inner .theme-button {
   width: 2.25rem;
   padding: 0;
   font-size: 1rem;
 }
 
-/* Panel visi pod ozubenym kolem, mimo tok listy. */
+/* Emoji mesicek si nese vlastni barvu, slunicko jde v barve textu. */
+.header-inner .theme-button {
+  line-height: 1;
+}
+
+/* Panel visi pod pravym krajem listy, mimo jeji tok. */
 .settings-panel {
   position: absolute;
   top: calc(100% + 0.4rem);
-  right: 0;
+  right: 1rem;
+  max-width: calc(100vw - 2rem);
   z-index: 20;
   display: flex;
   flex-direction: column;
