@@ -1234,6 +1234,7 @@ function SettingsMenu({
   lang,
   onLang,
   metrics,
+  canSortByDate,
   sortBy,
   onSort,
   tools,
@@ -1244,6 +1245,8 @@ function SettingsMenu({
   onLang: (lang: Lang) => void;
   /** Prazdne = neni podle ceho radit, radek se nezobrazi. */
   metrics: string[];
+  /** Razeni podle data ma smysl jen v seznamu — mrizka data drzi sama. */
+  canSortByDate: boolean;
   sortBy: string;
   onSort: (value: string) => void;
   /** Redakcni nastroje na konci panelu (jen pro EDITOR_TOOLS). */
@@ -1300,15 +1303,21 @@ function SettingsMenu({
             />
           </div>
 
-          {metrics.length > 0 && (
+          {(metrics.length > 0 || canSortByDate) && (
             <div className="setting">
               <span className="field-label">{t("sortLabel")}</span>
               <select
-                value={metrics.includes(sortBy) ? sortBy : "hypes"}
+                value={
+                  (sortBy === "date" && canSortByDate) ||
+                  metrics.includes(sortBy)
+                    ? sortBy
+                    : "hypes"
+                }
                 aria-label={t("sortLabel")}
                 onChange={(event) => onSort(event.target.value)}
               >
                 <option value="hypes">{t("followers")}</option>
+                {canSortByDate && <option value="date">{t("sortDate")}</option>}
                 {metrics.map((label) => (
                   <option key={label} value={label}>
                     {metricLabel(label)}
@@ -1966,6 +1975,12 @@ function App() {
   }, [listGames]);
 
   const sortedGames = useMemo(() => {
+    // Hry bez data (jen rok nebo nic) padaji nakonec, jinak by byly prvni.
+    if (sortBy === "date") {
+      const day = (game: Game) =>
+        game.first_release_date ?? Number.MAX_SAFE_INTEGER;
+      return [...listGames].sort((a, b) => day(a) - day(b));
+    }
     if (!metrics.includes(sortBy)) return listGames;
     // Hry mimo top 20 dane metriky umisteni nemaji a padaji nakonec.
     const rank = (game: Game) =>
@@ -2063,6 +2078,8 @@ function App() {
   const toggleCalendar = () => {
     const next = !asCalendar;
     setAsCalendar(next);
+    /* Mrizka uz podle data razena je, volba by v ni jen visela bez ucinku. */
+    if (next && sortBy === "date") setSortBy("hypes");
     if (next && view.kind !== "month" && view.kind !== "year") {
       const month = selectedYear > CURRENT_YEAR ? 1 : CURRENT_MONTH;
       setInputValue("");
@@ -2098,8 +2115,7 @@ function App() {
           <div className="period">
             <select
               value={
-                viewYear(view) ??
-                (view.kind === "undated" ? "undated" : "")
+                viewYear(view) ?? (view.kind === "undated" ? "undated" : "")
               }
               aria-label={t("yearLabel")}
               onChange={(event) => selectYear(event.target.value)}
@@ -2209,6 +2225,7 @@ function App() {
             onLang={changeLang}
             /* Prazdne u hledani, kde zebricky nejsou — radek se pak skryje. */
             metrics={metrics}
+            canSortByDate={!asCalendar}
             sortBy={sortBy}
             onSort={setSortBy}
             onHelp={() => setIntro(true)}
