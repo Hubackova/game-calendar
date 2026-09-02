@@ -1068,6 +1068,18 @@ function BulbIcon() {
   );
 }
 
+/** Lupa; stejne jako zarovka jednobarevna, at jde barvit pres `currentColor`. */
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"
+      />
+    </svg>
+  );
+}
+
 /**
  * Znacky u hry. Hra muze mit jen jednu, takze kliknuti na druhou tu prvni
  * prepne — proto jedna komponenta pro obe, ne dve nezavisla tlacitka.
@@ -1164,7 +1176,8 @@ function Segmented<T extends string>({
 }: {
   label: string;
   value: T;
-  options: { value: T; label: string; title?: string }[];
+  /** `label` je i ReactNode — filtr znacek ma misto textu ikony. */
+  options: { value: T; label: ReactNode; title?: string }[];
   onChange: (value: T) => void;
 }) {
   return (
@@ -2150,7 +2163,16 @@ function App() {
               options={[
                 { value: "all", label: t("marksAll") },
                 { value: "fav", label: "♥", title: t("marksFav") },
-                { value: "both", label: "♥+💡", title: t("marksBoth") },
+                {
+                  value: "both",
+                  label: (
+                    <>
+                      ♥+
+                      <BulbIcon />
+                    </>
+                  ),
+                  title: t("marksBoth"),
+                },
               ]}
               onChange={setMarkFilter}
             />
@@ -2175,7 +2197,9 @@ function App() {
                 if (event.target.value === "") setView({ kind: "upcoming" });
               }}
             />
-            <button type="submit">{t("search")}</button>
+            <button type="submit" aria-label={t("search")} title={t("search")}>
+              <SearchIcon />
+            </button>
           </form>
 
           <ThemeToggle theme={theme} onTheme={setTheme} />

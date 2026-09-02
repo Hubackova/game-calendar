@@ -70,7 +70,6 @@
 
 .search {
   display: flex;
-  gap: 0.5rem;
   margin-left: auto;
 }
 
@@ -505,6 +504,35 @@
   padding: 0 0.9rem;
   background: var(--code-bg);
   cursor: pointer;
+}
+
+/*
+ * Hledani je jedno pole: input a tlacitko se drzi nalepene, zaobleni zustava
+ * jen na vnejsich hranach a `-1px` slepi dve orameni do jedne linky.
+ */
+.header-inner .search input {
+  border-radius: 8px 0 0 8px;
+}
+
+.header-inner .search button {
+  /* Jen lupa, takze ctverec o stejne strane, jako je vyska pole. */
+  width: 2.25rem;
+  margin-left: -1px;
+  padding: 0;
+  border-radius: 0 8px 8px 0;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+/* SVG sedi na uctare, o par procent nad ni to opticky sedi na text vedle. */
+.header-inner svg {
+  vertical-align: -0.125em;
+}
+
+/* Zaostreny prvek musi byt nad sousedem, jinak mu soused prekryje ramecek. */
+.header-inner .search :focus-visible {
+  position: relative;
+  z-index: 1;
 }
 
 .header-inner button:hover:not(:disabled) {
