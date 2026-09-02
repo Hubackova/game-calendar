@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { createIgdbApi } from "./server/igdb.ts";
+import { urlFor } from "./src/url.ts";
 
 /** Dev server jen zpristupni sdileny modul; produkce ma stejnou logiku ve funkci. */
 function igdbPlugin(clientId: string, clientSecret: string): Plugin {
@@ -331,18 +332,31 @@ function seoPlugin(siteUrl: string): Plugin {
         ].join("\n"),
       });
 
-      // Parametry musi odpovidat `urlFor()` v src/url.ts, jinak by sitemapa
-      // ukazovala na adresy, ktere aplikace sama nikdy nevytvori.
+      // Adresy skladame pres `urlFor()`, aby sitemapa nemohla ukazovat jinam,
+      // nez kam aplikace odkazuje — a nez kam miri canonical v `syncMeta()`.
       const today = new Date();
       const lastmod = today.toISOString().slice(0, 10);
       // „/“ uz je kalendar aktualniho mesice, dalsi mesice zaciname od pristiho.
       const paths = ["/"];
       for (let offset = 1; offset <= 12; offset += 1) {
         const month = new Date(today.getFullYear(), today.getMonth() + offset);
-        paths.push(`/?rok=${month.getFullYear()}&mesic=${month.getMonth() + 1}`);
+        paths.push(
+          urlFor(
+            {
+              kind: "month",
+              year: month.getFullYear(),
+              month: month.getMonth() + 1,
+            },
+            true,
+          ),
+        );
       }
-      paths.push(`/?rok=${today.getFullYear()}&obdobi=rok`);
-      paths.push(`/?rok=${today.getFullYear() + 1}&obdobi=rok`);
+      for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
+        paths.push(urlFor({ kind: "year", year }, true));
+      }
+      // Vypisy bez konkretniho obdobi — canonical na nich ukazuje sam na sebe.
+      paths.push(urlFor({ kind: "undated", year: null }, true));
+      paths.push(urlFor({ kind: "upcoming" }, true));
 
       this.emitFile({
         type: "asset",

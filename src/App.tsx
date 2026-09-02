@@ -1739,6 +1739,16 @@ function pageTitle(view: View): string {
 }
 
 /**
+ * Zaklad absolutnich adres. V HTML ho pri buildu vyplni `seoPlugin`, takze ho
+ * nemusime mit v kodu dvakrat — a v deploy preview to nesebereme z location,
+ * kde by si nahled canonicalizoval sam sebe.
+ */
+const SITE_URL = (
+  document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href ??
+  window.location.origin
+).replace(/\/+$/, "");
+
+/**
  * Popis stranky pro `<meta name="description">` a Open Graph. U vypisu za
  * obdobi ma smysl obdobi jmenovat, u hledani zustava obecny.
  */
@@ -1769,6 +1779,18 @@ function syncMeta(view: View): void {
       .querySelector<HTMLMetaElement>(selector)
       ?.setAttribute("content", content);
   };
+
+  /* Seznam je jen jina podoba te same stranky, takze canonical vzdy ukazuje
+     na mrizku. Vysledky hledani do indexu nepatri — obsah je cizi a dotazu
+     je neomezene mnozstvi. */
+  const indexable = view.kind !== "search";
+  const canonical = SITE_URL + (indexable ? urlFor(view, true) : "/");
+
+  document.head
+    .querySelector<HTMLLinkElement>('link[rel="canonical"]')
+    ?.setAttribute("href", canonical);
+  set('meta[property="og:url"]', canonical);
+  set('meta[name="robots"]', indexable ? "index, follow" : "noindex, follow");
 
   set('meta[name="description"]', description);
   set('meta[property="og:title"]', title);
