@@ -406,9 +406,16 @@
   font-size: 1rem;
 }
 
-/* Scrolluje jen obsah, titulek a tlacitka zustavaji videt. */
+/*
+ * Scrolluje jen obsah, titulek a tlacitka zustavaji videt.
+ *
+ * Zaklad musi byt `auto`, ne `0` ze zkratky `flex: 1`: dialog je vysoky podle
+ * obsahu (`max-height` ho jen strope), takze v takovem kontejneru neni zadne
+ * volne misto k rozdeleni — WebKit pak necha telo na nulove vysce a z modalu
+ * zbyde titulek s tlacitkem. Chrome to samo dopocita z obsahu, Safari ne.
+ */
 .confirm-body {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   padding: 1.25rem;
