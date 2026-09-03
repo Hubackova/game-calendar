@@ -404,6 +404,8 @@
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);
   font-size: 1rem;
+  align-items: center;
+  display: flex;
 }
 
 /*
@@ -480,7 +482,8 @@
   appearance: none;
 }
 
-.header-inner select {
+.header-inner select,
+.header-inner .picker-button {
   padding: 0 1.6rem 0 0.6rem;
   cursor: pointer;
   /* Sipka, kterou `appearance: none` odstranila. */
@@ -499,6 +502,19 @@
 .header-inner input {
   padding: 0 0.7rem;
   min-width: 12rem;
+}
+
+/* Tlacitko vyberu obdobi se ma cist jako select, ne jako akce. */
+.header-inner .picker-button {
+  /* Aby popisek nepreskakoval sirku pri kazde zmene obdobi, ale na uzkem
+     displeji zbylo misto na prepinac vedle. */
+  min-width: 8.5rem;
+  background-color: var(--bg);
+  text-align: left;
+}
+
+.header-inner .picker-button::first-letter {
+  text-transform: uppercase;
 }
 
 .header-inner button {
@@ -558,10 +574,107 @@
   flex-wrap: wrap;
 }
 
-/* Bez zvoleneho roku nema obdobi co zuzovat — at je videt, ze je neaktivni. */
-.period select:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+/* Panel se kotvi k liste, ne k tlacitku — po zabaleni listy by `left` na
+   tlacitku putovalo s nim a panel by vylezl mimo obrazovku. */
+.picker {
+  position: static;
+}
+
+.picker-panel {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 1rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 18rem;
+  max-width: calc(100vw - 2rem);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--shadow, 0 10px 30px rgb(0 0 0 / 0.2));
+  text-align: left;
+}
+
+.picker-group {
+  padding: 0.7rem 0.75rem;
+}
+
+/* Prehledy, roky a vybrany rok jsou tri vrstvy vyberu — linka je oddeli. */
+.picker-group + .picker-group {
+  border-top: 1px solid var(--border);
+}
+
+.picker-panel .field-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.picker-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.picker-months {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+  margin: 0.35rem 0;
+}
+
+/* Volby v panelu nejsou tlacitka v liste — zadny ramecek ani vlastni pozadi. */
+.header-inner .picker-panel button {
+  height: auto;
+  min-height: 2rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-h);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.header-inner .picker-panel button:hover {
+  border-color: transparent;
+  background: var(--code-bg);
+  color: var(--text-h);
+}
+
+.header-inner .picker-panel button[aria-pressed="true"] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Mesice maji jednoslovny popisek, na stred se v mrizce cte lepe. Selektor
+   musi byt stejne konkretni jako `.picker-panel button`, jinak vyhraje jeho
+   `text-align: left`. */
+.header-inner .picker-months button {
+  padding-inline: 0.25rem;
+  text-align: center;
+  /* Intl dava v cestine mesice s malym pocatecnim pismenem. */
+  text-transform: capitalize;
+}
+
+/* Roky drzi pohromade jako prepinac, takze prebiraji vzhled `.segmented`. */
+.header-inner .picker-years {
+  display: flex;
+}
+
+.header-inner .picker-years button {
+  flex: 1 1 auto;
+  border-radius: 0;
+  text-align: center;
+}
+
+.header-inner .picker-years button + button {
+  border-left: 1px solid var(--border);
 }
 
 /* Datum, ktere na hreji prestalo platit. */

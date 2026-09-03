@@ -1821,11 +1821,153 @@ function syncMeta(view: View): void {
   set('meta[property="og:locale"]', ogLocale());
 }
 
+/**
+ * Hodnota selectu pro aktualni vypis. Hledani zadne obdobi nema, takze v nem
+ * select ukazuje „vse“ — stejne jako pred slucenim obou poli.
+ */
+function periodValue(view: View): string {
+  if (view.kind === "month") return `${view.year}-${view.month}`;
+  if (view.kind === "year") return String(view.year);
+  if (view.kind === "undated") {
+    return view.year != null ? `${view.year}-undated` : "undated";
+  }
+  return "all";
+}
+
+/** Co je vybrane — text na tlacitku, ktere panel otevira. */
+function periodTitle(view: View): string {
+  if (view.kind === "month") return `${months()[view.month - 1]} ${view.year}`;
+  if (view.kind === "year") return `${t("wholeYear")} ${view.year}`;
+  if (view.kind === "undated") {
+    return view.year != null ? `${t("undated")} ${view.year}` : t("undatedAll");
+  }
+  return t("noPeriod");
+}
+
+/**
+ * Vyber obdobi. Nativni select s optgroupami narval tri roky po trinacti
+ * polozkach do jednoho dlouheho svitku; tady jsou roky zalozky a mesice
+ * mrizka, takze je videt cely rok naraz.
+ *
+ * Zalozky zamerne nejsou rozbalovaci harmonika — nevznika stav
+ * „rozbaleno/sbaleno“, ktery si clovek musi drzet v hlave, a vybrany rok je
+ * videt i zavreny na tlacitku.
+ */
+function PeriodPicker({
+  view,
+  onSelect,
+}: {
+  view: View;
+  onSelect: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState(() => viewYear(view) ?? CURRENT_YEAR);
+  const holder = useRef<HTMLDivElement>(null);
+
+  /* Otevreni ukaze rok z vypisu, ne ten, na kterem clovek skoncil naposledy. */
+  useEffect(() => {
+    if (open) setTab(viewYear(view) ?? CURRENT_YEAR);
+  }, [open, view]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!holder.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  const value = periodValue(view);
+  const option = (next: string, label: string) => (
+    <button
+      key={next}
+      type="button"
+      aria-pressed={value === next}
+      onClick={() => {
+        onSelect(next);
+        setOpen(false);
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="picker" ref={holder}>
+      <button
+        type="button"
+        className="picker-button"
+        aria-expanded={open}
+        aria-label={`${t("periodLabel")}: ${periodTitle(view)}`}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {periodTitle(view)}
+      </button>
+
+      {open && (
+        <div className="picker-panel">
+          <div className="picker-group">
+            <span className="field-label">{t("overviews")}</span>
+            <div className="picker-rows">
+              {option("all", t("noPeriod"))}
+              {option("undated", t("undatedAll"))}
+            </div>
+          </div>
+
+          <div className="picker-group">
+            <span className="field-label">{t("yearsLabel")}</span>
+            <div className="segmented picker-years">
+              {YEARS.map((option_) => (
+                <button
+                  key={option_}
+                  type="button"
+                  aria-pressed={option_ === tab}
+                  onClick={() => setTab(option_)}
+                >
+                  {option_}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="picker-group">
+            <div className="picker-rows">
+              {option(String(tab), `${t("wholeYear")} ${tab}`)}
+            </div>
+            {/* V aktualnim roce nenabizime mesice, ktere uz probehly. */}
+            <div className="picker-months">
+              {months()
+                .map((_, index) => index + 1)
+                .filter((month) => tab > CURRENT_YEAR || month >= CURRENT_MONTH)
+                .map((month) => option(`${tab}-${month}`, months()[month - 1]))}
+            </div>
+            <div className="picker-rows">
+              {option(`${tab}-undated`, t("undated"))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Kolik her ukazat na jedne strance seznamu. */
 const PAGE_SIZE = 20;
 
-/* Filtrovat do minulosti nema smysl, kalendar se diva dopredu. */
-const YEARS = Array.from({ length: 8 }, (_, index) => CURRENT_YEAR + index);
+/*
+ * Filtrovat do minulosti nema smysl, kalendar se diva dopredu. Dal nez tri
+ * roky uz data nejsou k nicemu — IGDB tam ma jen roztrousene tituly bez dat.
+ * Rucne zkracena adresa (`?rok=2031`) funguje dal, jen neni v nabidce.
+ */
+const YEARS = Array.from({ length: 3 }, (_, index) => CURRENT_YEAR + index);
 
 function App() {
   /* Vychozi stav bere z adresy, aby sdileny odkaz otevrel spravny vypis. */
@@ -2039,21 +2181,16 @@ function App() {
   /* Bez zvoleneho obdobi se ridime naposledy vybranym rokem. */
   const selectedYear = viewYear(view) ?? year;
 
-  /** Obdobi uvnitr zvoleneho roku; „vse“ a „bez data“ napric roky resi rok. */
+  /**
+   * Jeden select pro rozsah i obdobi. Rok a mesic drzime v hodnote pohromade
+   * (`2026-10`), takze vyber je jeden krok a neexistuje stav, kdy je vybrany
+   * rok bez obdobi nebo obdobi bez roku.
+   */
   const selectPeriod = (value: string) => {
-    // Mrizka umi mesic i cely rok, „bez data“ zadne datum nema.
-    if (value === "undated") {
-      setAsCalendar(false);
-      return setView({ kind: "undated", year });
-    }
-    if (value === "year") return setView({ kind: "year", year });
-    setView({ kind: "month", year, month: Number(value) });
-  };
-
-  /** Prvni select: „vše“ a „bez data“ nejsou rok, ale rozsah bez roku. */
-  const selectYear = (value: string) => {
     setInputValue("");
-    if (value === "") {
+
+    // Prurezy napric roky: mrizka je neumi, ta potrebuje jeden mesic.
+    if (value === "all") {
       setAsCalendar(false);
       return setView({ kind: "upcoming" });
     }
@@ -2062,16 +2199,19 @@ function App() {
       return setView({ kind: "undated", year: null });
     }
 
-    const picked = Number(value);
-    setYear(picked);
-    if (view.kind === "month") {
-      setView({ kind: "month", year: picked, month: view.month });
-    } else if (view.kind === "undated") {
-      setView({ kind: "undated", year: picked });
-    } else {
-      // Vyber roku bez jineho obdobi znamena „ukaz mi ten rok“.
-      setView({ kind: "year", year: picked });
+    const [picked, part] = value.split("-");
+    const pickedYear = Number(picked);
+    // Pamatujeme si rok, aby prepnuti na mrizku vedelo, ktery mesic vzit.
+    setYear(pickedYear);
+
+    if (part === "undated") {
+      setAsCalendar(false);
+      return setView({ kind: "undated", year: pickedYear });
     }
+    if (part) {
+      return setView({ kind: "month", year: pickedYear, month: Number(part) });
+    }
+    return setView({ kind: "year", year: pickedYear });
   };
 
   /** Kalendar potrebuje mesic — kdyz zadny neni, vezmeme nejblizsi povoleny. */
@@ -2113,53 +2253,7 @@ function App() {
       <header className="header">
         <div className="header-inner">
           <div className="period">
-            <select
-              value={
-                viewYear(view) ?? (view.kind === "undated" ? "undated" : "")
-              }
-              aria-label={t("yearLabel")}
-              onChange={(event) => selectYear(event.target.value)}
-            >
-              {/* Bez roku: vsechno chystane, nebo vsechno bez presneho data. */}
-              <option value="">{t("noPeriod")}</option>
-              <option value="undated">{t("undatedAll")}</option>
-              {YEARS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-            <select
-              /* Bez roku neni co zuzovat — obdobi patri vzdy k roku. */
-              disabled={viewYear(view) == null}
-              value={
-                view.kind === "month"
-                  ? view.month
-                  : view.kind === "undated"
-                    ? "undated"
-                    : "year"
-              }
-              aria-label={t("periodLabel")}
-              onChange={(event) => {
-                setInputValue("");
-                selectPeriod(event.target.value);
-              }}
-            >
-              <option value="year">{t("wholeYear")}</option>
-              {months()
-                .map((_, index) => index + 1)
-                // V aktualnim roce nenabizime mesice, ktere uz probehly.
-                .filter(
-                  (month) =>
-                    selectedYear > CURRENT_YEAR || month >= CURRENT_MONTH,
-                )
-                .map((month) => (
-                  <option key={month} value={month}>
-                    {months()[month - 1]}
-                  </option>
-                ))}
-              <option value="undated">{t("undated")}</option>
-            </select>
+            <PeriodPicker view={view} onSelect={selectPeriod} />
 
             <Segmented
               label={t("calendar")}
