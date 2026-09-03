@@ -2,6 +2,16 @@
   command = "npm run build"
   publish = "dist"
 
+# Stara adresa nema zustat druhou indexovatelnou kopii webu. Netlify sam
+# `netlify.app` nepresmerovava — ta adresa funguje vzdy, dokud to nerekneme
+# takhle. `force` je nutne: bez nej se driv najde index.html a pravidlo se
+# neuplatni. Deploy previews maji vlastni host, takze se jich to netkne.
+[[redirects]]
+  from = "https://next-games.netlify.app/*"
+  to = "https://nextgames.eu/:splat"
+  status = 301
+  force = true
+
 # SPA: vsechno ostatni obsluhuje index.html. Funkce se resi driv nez redirecty,
 # takze `/api/games` sem nespadne.
 [[redirects]]
