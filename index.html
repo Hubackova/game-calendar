@@ -13,6 +13,10 @@
     <!-- Aplikace to prepina: vysledky hledani si nastavi `noindex`. -->
     <meta name="robots" content="index, follow" />
 
+    <!-- Obaly her jdou z cizi domeny; bez tohohle resi prohlizec DNS, TCP
+         a TLS teprve u prvniho obrazku. -->
+    <link rel="preconnect" href="https://images.igdb.com" crossorigin />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="theme-color" content="#863bff" />
 

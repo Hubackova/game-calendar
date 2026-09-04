@@ -61,8 +61,23 @@ import {
   type HrejRef,
 } from "./hrej";
 
-const coverUrl = (imageId: string) =>
-  `https://images.igdb.com/igdb/image/upload/t_cover_big_2x/${imageId}.jpg`;
+/**
+ * Obal ve velikosti, ktera odpovida miste zobrazeni. IGDB dava kazdou obalku
+ * v nekolika variantach a `cover_big_2x` (528 × 748) je pro policko kalendare
+ * o sirce 76 px sedmkrat vetsi, nez je potreba — v mesici se ctyriceti hrami
+ * to byly megabajty pro nic.
+ */
+const COVER_SIZES = {
+  /** 180 × 256 — policko kalendare (76 px, tedy 152 px na retine). */
+  cell: "t_cover_small_2x",
+  /** 264 × 374 — karta v seznamu (180 px). */
+  card: "t_cover_big",
+  /** 528 × 748 — detail hry, jeden obrazek na obrazovku. */
+  detail: "t_cover_big_2x",
+} as const;
+
+const coverUrl = (imageId: string, size: keyof typeof COVER_SIZES = "detail") =>
+  `https://images.igdb.com/igdb/image/upload/${COVER_SIZES[size]}/${imageId}.jpg`;
 
 /**
  * Datum vypisujeme jen tak presne, jak ho IGDB zna. U ctvrtletnich vydani je
@@ -818,7 +833,12 @@ function CalendarEntry({
         onClick={() => onOpen(game)}
       >
         {game.cover ? (
-          <img src={coverUrl(game.cover.image_id)} alt={game.name} width={76} />
+          <img
+            src={coverUrl(game.cover.image_id, "cell")}
+            alt={game.name}
+            width={76}
+            loading="lazy"
+          />
         ) : (
           // Bez obalky by policko zustalo prazdne, tady nazev smysl ma.
           <span className="cal-noimg">{game.name}</span>
@@ -863,7 +883,12 @@ function GameDialog({
         {game && (
           <div className="detail-body">
             {game.cover && (
-              <img src={coverUrl(game.cover.image_id)} alt="" width={200} />
+              <img
+                src={coverUrl(game.cover.image_id, "detail")}
+                alt=""
+                width={200}
+                height={283}
+              />
             )}
             <div className="detail-text">
               <dl className="details">
@@ -2392,9 +2417,10 @@ function App() {
               <li key={game.id} className="game">
                 {game.cover && (
                   <img
-                    src={coverUrl(game.cover.image_id)}
+                    src={coverUrl(game.cover.image_id, "card")}
                     alt={game.name}
                     width={180}
+                    loading="lazy"
                   />
                 )}
                 <div className="game-body">

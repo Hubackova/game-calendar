@@ -193,7 +193,12 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
     return token.value;
   }
 
-  async function query(endpoint: string, body: string): Promise<unknown> {
+  async function query(
+    endpoint: string,
+    body: string,
+    /** Druhy pokus uz token neobnovuje, aby se to nezacyklilo. */
+    refreshed = false,
+  ): Promise<unknown> {
     const res = await fetch(`${IGDB_URL}/${endpoint}`, {
       method: "POST",
       headers: {
@@ -203,6 +208,18 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
       },
       body,
     });
+
+    /*
+     * Token muze prestat platit driv, nez vyprsi jeho `expires_in` — Twitch
+     * zneplatnuje starsi app access tokeny, kdyz se vyda novy. Cache o tom
+     * nevi a s dvoumesicni platnosti by o obnovu sama nepozadala, takze by
+     * proces posilal mrtvy token az do restartu.
+     */
+    if (res.status === 401 && !refreshed) {
+      token = null;
+      return query(endpoint, body, true);
+    }
+
     if (!res.ok) {
       throw new Error(`IGDB ${endpoint} ${res.status}: ${await res.text()}`);
     }
