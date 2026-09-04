@@ -423,6 +423,8 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Dojezd na konci obsahu nema pokracovat scrollovanim stranky za modalem. */
+  overscroll-behavior: contain;
   padding: 1.25rem;
 }
 
@@ -1213,6 +1215,16 @@
  * ktereho je videt jen par pixelu.
  */
 @media (max-width: 600px) {
+  /*
+   * Pres celou obrazovku uz neni videt, ze posuvnik patri strance za modalem —
+   * cte se jako posuvnik modalu a scrolluje necim jinym, nez clovek ceka.
+   * `:has()` drzi zamek u toho, co ho zpusobuje, takze nejde rozejit se stavem
+   * v JS jako trida pridavana rucne.
+   */
+  html:has(.confirm[open]) {
+    overflow: hidden;
+  }
+
   .confirm,
   .intro,
   .game-detail {
