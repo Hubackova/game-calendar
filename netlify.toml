@@ -12,6 +12,13 @@
   status = 301
   force = true
 
+# Anglicka verze ma vlastni `index.html` s vlastni hlavickou, takze musi mit
+# i vlastni fallback — jinak by `/en/?rok=2026` spadlo na ceskou stranku.
+[[redirects]]
+  from = "/en/*"
+  to = "/en/index.html"
+  status = 200
+
 # SPA: vsechno ostatni obsluhuje index.html. Funkce se resi driv nez redirecty,
 # takze `/api/games` sem nespadne.
 [[redirects]]

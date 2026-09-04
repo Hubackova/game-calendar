@@ -3,6 +3,8 @@
  * `cs*`, jinak anglictina. Redakcni nastroje (Hrej, Gemini) zustavaji cesky —
  * jsou schovane za `EDITOR_TOOLS` a pouziva je jen redakce.
  */
+import { META, type Lang } from "./meta";
+
 const cs = {
   brand: "Herní kalendář",
   tagline: "chystané hry a data vydání",
@@ -80,8 +82,8 @@ const cs = {
   toNight: "Přepnout na noční režim",
   themeLabel: "Přepnout denní a noční režim",
   metricVisits: "IGDB návštěvy",
-  metaDescription:
-    "Chystané hry podle data vydání. Označ si srdíčkem a žárovkou, co chceš hrát, a sestav si vlastní kalendář — jen co IGDB doplní datum, hra v něm naskočí.",
+  /* Stejny text jako ve staticke hlavicce, aby se nemohly rozejit. */
+  metaDescription: META.cs.description,
   /** `{period}` vymeni obdobi vypisu, treba „Říjen 2026“. */
   metaDescriptionPeriod:
     "{period}: hry a data vydání. Označ si srdíčkem a žárovkou, co chceš hrát, a sestav si z výpisu vlastní kalendář. Data z IGDB.",
@@ -162,28 +164,37 @@ const en: typeof cs = {
   toNight: "Switch to dark mode",
   themeLabel: "Switch light and dark mode",
   metricVisits: "IGDB visits",
-  metaDescription:
-    "Upcoming games by release date. Mark what you want to play with a heart or a bulb and build your own calendar — a game appears as soon as IGDB adds its date.",
+  metaDescription: META.en.description,
   metaDescriptionPeriod:
     "{period}: games and release dates. Mark what you want to play and build your own calendar out of the listing. Data from IGDB.",
 };
 
-export type Lang = "cs" | "en";
+export type { Lang };
 
 const STORAGE_KEY = "lang";
 const dicts = { cs, en };
 
-function detect(): Lang {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === "cs" || saved === "en") return saved;
-  } catch {
-    /* bez ulozene volby rozhoduje prohlizec */
-  }
-  return navigator.language.toLowerCase().startsWith("cs") ? "cs" : "en";
+/**
+ * O jazyku rozhoduje adresa, ne prohlizec: `/en/…` je anglicky, cokoli
+ * jineho cesky. Kazda jazykova verze tak ma vlastni URL s vlastnim
+ * canonical — bez toho by Googlebot (chodi s `en-US`) indexoval anglicky
+ * obsah pod ceskou adresou.
+ */
+export function langFromPath(pathname: string): Lang {
+  return pathname === "/en" || pathname.startsWith("/en/") ? "en" : "cs";
 }
 
-let lang: Lang = detect();
+/** Ulozena volba. Prohlizec se nepta — z te se jen odvozuje presmerovani. */
+export function savedLang(): Lang | null {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved === "cs" || saved === "en" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+let lang: Lang = langFromPath(window.location.pathname);
 
 export const getLang = () => lang;
 
@@ -204,8 +215,7 @@ export const t = (key: keyof typeof cs) => dicts[lang][key];
 
 const localeOf = (value: Lang) => (value === "cs" ? "cs-CZ" : "en-GB");
 
-/** Open Graph chce podtrzitko, ne pomlcku — `cs_CZ`, `en_GB`. */
-export const ogLocale = () => localeOf(lang).replace("-", "_");
+export const ogLocale = () => META[lang].ogLocale;
 
 /** Formatovani datumu drzime tady, aby slo za aktualnim jazykem. */
 export const formatDay = (date: Date) =>

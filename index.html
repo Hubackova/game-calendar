@@ -1,15 +1,19 @@
 <!doctype html>
-<html lang="cs">
+<html lang="%LANG%">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>Herní kalendář — chystané hry a data vydání</title>
-    <meta
-      name="description"
-      content="Přehled chystaných her podle data vydání. Nejočekávanější tituly po měsících i v celoročním kalendáři, s vývojáři, platformami a popisem. Data z IGDB."
-    />
-    <link rel="canonical" href="%SITE_URL%/" />
+    <title>%TITLE%</title>
+    <meta name="description" content="%DESCRIPTION%" />
+    <link rel="canonical" href="%SITE_URL%%PREFIX%/" />
+    <!--
+      Dve jazykove verze na dvou adresach. Aplikace hrefy prepisuje podle
+      vypisu, aby ukazovaly na dvojce te same stranky, ne na homepage.
+    -->
+    <link rel="alternate" hreflang="cs" href="%SITE_URL%/" />
+    <link rel="alternate" hreflang="en" href="%SITE_URL%/en/" />
+    <link rel="alternate" hreflang="x-default" href="%SITE_URL%/" />
     <!-- Aplikace to prepina: vysledky hledani si nastavi `noindex`. -->
     <meta name="robots" content="index, follow" />
 
@@ -22,24 +26,15 @@
 
     <!-- Nahled odkazu na socialnich sitich a v Slacku. -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Herní kalendář" />
-    <meta property="og:locale" content="cs_CZ" />
-    <meta
-      property="og:title"
-      content="Herní kalendář — chystané hry a data vydání"
-    />
-    <meta
-      property="og:description"
-      content="Přehled chystaných her podle data vydání. Nejočekávanější tituly po měsících i v celoročním kalendáři. Data z IGDB."
-    />
-    <meta property="og:url" content="%SITE_URL%/" />
+    <meta property="og:site_name" content="%BRAND%" />
+    <meta property="og:locale" content="%OG_LOCALE%" />
+    <meta property="og:title" content="%TITLE%" />
+    <meta property="og:description" content="%DESCRIPTION%" />
+    <meta property="og:url" content="%SITE_URL%%PREFIX%/" />
     <meta property="og:image" content="%SITE_URL%/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta
-      property="og:image:alt"
-      content="Herní kalendář — přehled chystaných her"
-    />
+    <meta property="og:image:alt" content="%OG_IMAGE_ALT%" />
     <meta name="twitter:card" content="summary_large_image" />
 
     <!--

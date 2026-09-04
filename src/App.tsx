@@ -13,6 +13,7 @@ import { EDITOR_TOOLS } from "./config";
 import { loadMarks, saveMarks, type Mark } from "./favorites";
 import { introSeen, markIntroSeen } from "./intro";
 import { applyTheme, loadTheme, type Theme } from "./theme";
+import { LANG_PREFIX } from "./meta";
 import {
   formatDay,
   formatMonthYear,
@@ -29,8 +30,8 @@ import { fetchGamesByIds } from "./igdb";
 import {
   CURRENT_MONTH,
   CURRENT_YEAR,
+  localizedUrl,
   parseUrl,
-  urlFor,
   viewYear,
   type View,
 } from "./url";
@@ -1801,14 +1802,17 @@ function pageTitle(view: View): string {
 }
 
 /**
- * Zaklad absolutnich adres. V HTML ho pri buildu vyplni `seoPlugin`, takze ho
- * nemusime mit v kodu dvakrat — a v deploy preview to nesebereme z location,
- * kde by si nahled canonicalizoval sam sebe.
+ * Zaklad absolutnich adres. Bere se z canonicalu, ktery pri buildu vyplni
+ * `seoPlugin` — z `location` by si deploy preview canonicalizoval sam sebe.
+ *
+ * Jen origin, ne cela adresa: na anglicke verzi je v canonicalu i `/en`
+ * a jazykovy prefix si pak pripojujeme sami. (Web bezi v korenu domeny,
+ * takze zadnou dalsi cestu nezahazujeme.)
  */
-const SITE_URL = (
+const SITE_URL = new URL(
   document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href ??
-  window.location.origin
-).replace(/\/+$/, "");
+    window.location.href,
+).origin;
 
 /**
  * Popis stranky pro `<meta name="description">` a Open Graph. U vypisu za
@@ -1846,12 +1850,25 @@ function syncMeta(view: View): void {
      na mrizku. Vysledky hledani do indexu nepatri — obsah je cizi a dotazu
      je neomezene mnozstvi. */
   const indexable = view.kind !== "search";
-  const canonical = SITE_URL + (indexable ? urlFor(view, true) : "/");
 
-  document.head
-    .querySelector<HTMLLinkElement>('link[rel="canonical"]')
-    ?.setAttribute("href", canonical);
-  set('meta[property="og:url"]', canonical);
+  /* Kazdy vypis ma dvojcete ve druhem jazyce — hreflang musi ukazovat na nej,
+     ne na jazykovou homepage. Nazvy parametru se pritom lisi taky, takze
+     adresu sklada `localizedUrl`, ne prilepeni prefixu. */
+  const alt = (target: Lang) =>
+    SITE_URL +
+    (indexable ? localizedUrl(view, true, target) : LANG_PREFIX[target] + "/");
+
+  const href = (selector: string, value: string) => {
+    document.head
+      .querySelector<HTMLLinkElement>(selector)
+      ?.setAttribute("href", value);
+  };
+
+  href('link[rel="canonical"]', alt(getLang()));
+  href('link[hreflang="cs"]', alt("cs"));
+  href('link[hreflang="en"]', alt("en"));
+  href('link[hreflang="x-default"]', alt("cs"));
+  set('meta[property="og:url"]', alt(getLang()));
   set('meta[name="robots"]', indexable ? "index, follow" : "noindex, follow");
 
   set('meta[name="description"]', description);
@@ -2011,7 +2028,10 @@ const YEARS = Array.from({ length: 3 }, (_, index) => CURRENT_YEAR + index);
 
 function App() {
   /* Vychozi stav bere z adresy, aby sdileny odkaz otevrel spravny vypis. */
-  const initial = useMemo(() => parseUrl(window.location.search), []);
+  const initial = useMemo(
+    () => parseUrl(window.location.search, getLang()),
+    [],
+  );
 
   const [games, setGames] = useState<Game[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -2029,11 +2049,16 @@ function App() {
   /** `null` = podle systemu, dokud si clovek nevybere. */
   const [theme, setTheme] = useState<Theme>(loadTheme);
   /** Jazyk drzime ve stavu, aby prepnuti prekreslilo cely strom. */
-  const [lang, setLangState] = useState<Lang>(getLang);
+  /* Jazyk je dany adresou a meni se navigaci, takze tady staci precist. */
+  const lang = getLang();
 
+  /**
+   * Jazyk je v adrese, takze prepnuti je navigace — stav v Reactu by se od URL
+   * rozesel a canonical by ukazoval na verzi, kterou clovek nevidi.
+   */
   const changeLang = (next: Lang) => {
     setLang(next);
-    setLangState(next);
+    window.location.assign(localizedUrl(view, asCalendar, next));
   };
 
   useEffect(() => {
@@ -2043,26 +2068,28 @@ function App() {
   /* Zmena vypisu je novy krok v historii, aby fungovalo tlacitko zpet. */
   const synced = useRef(false);
   useEffect(() => {
-    const next = urlFor(view, asCalendar);
+    /* S jazykovym prefixem: bez nej by prvni srovnani adresy shodilo `/en/`
+       na `/` a po dalsim nacteni by se stranka prepnula do cestiny. */
+    const next = localizedUrl(view, asCalendar, lang);
     if (next !== window.location.pathname + window.location.search) {
       // Prvni beh jen srovna adresu do kanonicke podoby, to neni navigace.
       if (synced.current) window.history.pushState(null, "", next);
       else window.history.replaceState(null, "", next);
     }
     synced.current = true;
-  }, [view, asCalendar]);
+  }, [view, asCalendar, lang]);
 
   /* Prepnuti vypisu je novy pageview — uvodni nacteni si spocita count.js sam. */
   const counted = useRef(false);
   useEffect(() => {
-    if (counted.current) countPageview(urlFor(view, asCalendar));
+    if (counted.current) countPageview(localizedUrl(view, asCalendar, lang));
     counted.current = true;
-  }, [view, asCalendar]);
+  }, [view, asCalendar, lang]);
 
   /* Zpet a vpred v prohlizeci: stav si vezmeme z adresy. */
   useEffect(() => {
     const restore = () => {
-      const state = parseUrl(window.location.search);
+      const state = parseUrl(window.location.search, getLang());
       setView(state.view);
       setAsCalendar(state.asCalendar);
       setInputValue(state.view.kind === "search" ? state.view.term : "");

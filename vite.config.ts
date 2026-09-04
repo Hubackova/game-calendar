@@ -1,7 +1,10 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createIgdbApi } from "./server/igdb.ts";
-import { urlFor } from "./src/url.ts";
+import { localizedUrl, type View } from "./src/url.ts";
+import { LANG_PREFIX, LANGS, META, type Lang } from "./src/meta.ts";
 
 /** Dev server jen zpristupni sdileny modul; produkce ma stejnou logiku ve funkci. */
 function igdbPlugin(clientId: string, clientSecret: string): Plugin {
@@ -308,14 +311,72 @@ function geminiPlugin(apiKey: string): Plugin {
  * se sitemapou. Adresu nechceme mit zadratovanou v kodu: Netlify ji dava
  * v `URL`, lokalne padneme na dev server.
  */
+/**
+ * Dosadi do sablony `index.html` hodnoty jednoho jazyka. Cesky i anglicky
+ * `index.html` vznikaji ze stejneho souboru, takze se hlavicky nemohou
+ * rozejit — a texty maji jediny zdroj v `src/meta.ts`.
+ */
+function fillMeta(html: string, lang: Lang, base: string): string {
+  const meta = META[lang];
+  return html
+    .replaceAll("%SITE_URL%", base)
+    .replaceAll("%PREFIX%", LANG_PREFIX[lang])
+    .replaceAll("%LANG%", meta.htmlLang)
+    .replaceAll("%OG_LOCALE%", meta.ogLocale)
+    .replaceAll("%TITLE%", meta.title)
+    .replaceAll("%DESCRIPTION%", meta.description)
+    .replaceAll("%BRAND%", meta.brand)
+    .replaceAll("%OG_IMAGE_ALT%", meta.imageAlt);
+}
+
 function seoPlugin(siteUrl: string): Plugin {
   const base = siteUrl.replace(/\/+$/, "");
+  let serving = false;
+  let outDir = "dist";
 
   return {
     name: "seo-urls",
     // Musi bezet driv nez Vite resi vlastni `%VAR%` v index.html.
     enforce: "pre",
-    transformIndexHtml: (html) => html.replaceAll("%SITE_URL%", base),
+
+    configResolved(config) {
+      serving = config.command === "serve";
+      outDir = config.build.outDir;
+    },
+
+    /*
+     * V devu dosadime cestinu hned; anglicka verze se v devu pozna z cesty
+     * a prelozi se az v prohlizeci, hlavicka zustane ceska. Pri buildu
+     * zastupne znacky naopak musi prezit — hlavicku plni `writeBundle`,
+     * ktere uz vidi i vlozene odkazy na sbalene skripty.
+     */
+    transformIndexHtml: (html) =>
+      serving
+        ? fillMeta(html, "cs", base)
+        : html.replaceAll("%SITE_URL%", base),
+
+    /* Dev server nema `/en/index.html` — poslouzi stejny soubor jako korenu. */
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const path = (req.url ?? "/").split("?")[0];
+        if (path === "/en" || path === "/en/") req.url = "/";
+        next();
+      });
+    },
+
+    async writeBundle() {
+      const template = await readFile(join(outDir, "index.html"), "utf8");
+
+      for (const lang of LANGS) {
+        const dir = join(outDir, LANG_PREFIX[lang]);
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          join(dir, "index.html"),
+          fillMeta(template, lang, base),
+          "utf8",
+        );
+      }
+    },
     // `generateBundle` bezi jen pri buildu, `transformIndexHtml` i v devu.
     generateBundle() {
       this.emitFile({
@@ -332,31 +393,34 @@ function seoPlugin(siteUrl: string): Plugin {
         ].join("\n"),
       });
 
-      // Adresy skladame pres `urlFor()`, aby sitemapa nemohla ukazovat jinam,
-      // nez kam aplikace odkazuje — a nez kam miri canonical v `syncMeta()`.
+      // Vypisy drzime jako stavy a adresu z nich sklada `localizedUrl()`, aby
+      // sitemapa nemohla ukazovat jinam, nez kam odkazuje aplikace — a nez
+      // kam miri canonical v `syncMeta()`. Kazdy jazyk ma i vlastni nazvy
+      // parametru, takze prilepeni prefixu by nestacilo.
       const today = new Date();
       const lastmod = today.toISOString().slice(0, 10);
       // „/“ uz je kalendar aktualniho mesice, dalsi mesice zaciname od pristiho.
-      const paths = ["/"];
+      const views: View[] = [];
       for (let offset = 1; offset <= 12; offset += 1) {
         const month = new Date(today.getFullYear(), today.getMonth() + offset);
-        paths.push(
-          urlFor(
-            {
-              kind: "month",
-              year: month.getFullYear(),
-              month: month.getMonth() + 1,
-            },
-            true,
-          ),
-        );
+        views.push({
+          kind: "month",
+          year: month.getFullYear(),
+          month: month.getMonth() + 1,
+        });
       }
       for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
-        paths.push(urlFor({ kind: "year", year }, true));
+        views.push({ kind: "year", year });
       }
       // Vypisy bez konkretniho obdobi — canonical na nich ukazuje sam na sebe.
-      paths.push(urlFor({ kind: "undated", year: null }, true));
-      paths.push(urlFor({ kind: "upcoming" }, true));
+      views.push({ kind: "undated", year: null });
+      views.push({ kind: "upcoming" });
+
+      /* Kazdy vypis existuje v obou jazycich a hlasi se navzajem hreflangem. */
+      const localized = LANGS.flatMap((lang) => [
+        LANG_PREFIX[lang] + "/",
+        ...views.map((view) => localizedUrl(view, true, lang)),
+      ]);
 
       this.emitFile({
         type: "asset",
@@ -364,7 +428,7 @@ function seoPlugin(siteUrl: string): Plugin {
         source: [
           '<?xml version="1.0" encoding="UTF-8"?>',
           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-          ...paths.flatMap((path) => [
+          ...localized.flatMap((path) => [
             "  <url>",
             // V XML musi byt `&` escapovany, jinak je sitemapa nevalidni.
             `    <loc>${base}${path.replaceAll("&", "&amp;")}</loc>`,
