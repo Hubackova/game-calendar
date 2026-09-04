@@ -15,16 +15,17 @@ const cs = {
   howItWorks: "Jak to funguje",
   introTitle: "Jak to funguje",
   introWhat:
-    "Přehled chystaných her podle data vydání. Data jsou z IGDB a řadí se podle toho, kolik lidí hru sleduje.",
+    "Přehled chystaných her podle data vydání. Data jsou z IGDB a řadí se podle toho, kolik lidí hru sleduje (v nastavení je více možností řazení).",
   introPeriod:
-    "V prvním výběru zvolíš rozsah — vše, hry bez přesného data, nebo konkrétní rok; ve druhém pak celý rok či měsíc. Zobrazit to jde jako kalendář nebo jako seznam.",
-  introMarks: "U každé hry jsou dvě značky, které si můžeš uložit:",
-  introFav: "oblíbené — hry, na které čekáš",
-  introInterest: "zajímá mě — hry, které chceš mít v hledáčku",
-  introOneMark:
-    "Hra má vždy jen jednu značku, druhá tu první přepíše. Filtrem v liště pak zobrazíš jen značené hry — a to i v kalendáři.",
-  introSettings:
-    "V nastavení (⚙) si přepneš jazyk a taky řazení výpisu — podle sledujících na IGDB, nebo podle Steam wishlistu.",
+    "Vlevo v liště vybereš období — přehled všeho chystaného, hry bez data vydání, nebo konkrétní rok a měsíc. Hry je možné zobrazit v kalendáři nebo jako seznam. Ve výpisech jsou jen *nejsledovanější tituly*; jakoukoli další hru najdeš *přes hledání* a odtud si ji můžeš označit.",
+  introMarks:
+    "U každé hry jsou dvě značky, kterými si z výpisu sestavíš *vlastní kalendář*.",
+  introFav: "*oblíbené* — hry, na které čekáš",
+  introInterest: "*zajímá mě* — hry, které chceš mít v hledáčku",
+  introFilter:
+    "Filtrem v liště pak zobrazíš *jen označené hry* — a to i v kalendáři.",
+  introMarkedDate:
+    "Značit můžeš i hry, které *datum vydání ještě nemají*. Jakmile ho IGDB doplní, hra se ti *sama objeví v kalendáři* toho měsíce.",
   introStorage:
     "Značky se ukládají jen v tomto prohlížeči, nikam se neodesílají. Na jiném zařízení je proto neuvidíš a smazání dat prohlížeče je odstraní.",
   introClose: "Rozumím",
@@ -80,10 +81,10 @@ const cs = {
   themeLabel: "Přepnout denní a noční režim",
   metricVisits: "IGDB návštěvy",
   metaDescription:
-    "Přehled chystaných her podle data vydání. Nejočekávanější tituly po měsících i v celoročním kalendáři, s vývojáři, platformami a popisem. Data z IGDB.",
+    "Chystané hry podle data vydání. Označ si srdíčkem a žárovkou, co chceš hrát, a sestav si vlastní kalendář — jen co IGDB doplní datum, hra v něm naskočí.",
   /** `{period}` vymeni obdobi vypisu, treba „Říjen 2026“. */
   metaDescriptionPeriod:
-    "{period}: hry a data vydání. Přehled chystaných titulů s vývojáři, platformami a popisem. Data z IGDB.",
+    "{period}: hry a data vydání. Označ si srdíčkem a žárovkou, co chceš hrát, a sestav si z výpisu vlastní kalendář. Data z IGDB.",
 };
 
 const en: typeof cs = {
@@ -98,16 +99,17 @@ const en: typeof cs = {
   howItWorks: "How it works",
   introTitle: "How it works",
   introWhat:
-    "An overview of upcoming games by release date. The data comes from IGDB and is ranked by how many people follow each game.",
+    "An overview of upcoming games by release date. The data comes from IGDB and is ranked by how many people follow each game (settings offer more sort orders).",
   introPeriod:
-    "The first dropdown sets the range — everything, games without an exact date, or a single year; the second one picks the whole year or a month. You can view it as a calendar or as a list.",
-  introMarks: "Every game has two marks you can save:",
-  introFav: "favourites — games you are waiting for",
-  introInterest: "interested — games you want to keep an eye on",
-  introOneMark:
-    "A game only ever has one mark; the second one replaces the first. The filter in the toolbar then shows just the marked games, in the calendar too.",
-  introSettings:
-    "Settings (⚙) let you switch the language and the sort order — by IGDB followers or by Steam wishlist.",
+    "The picker on the left sets the period — everything upcoming, games without a release date, or a single year and month. The games can be shown as a calendar or as a list. The listings only hold the *most followed titles*; any other game you can find *through search* and mark it from there.",
+  introMarks:
+    "Every game has two marks, and with them you build your *own calendar* out of the listing.",
+  introFav: "*favourites* — games you are waiting for",
+  introInterest: "*interested* — games you want to keep an eye on",
+  introFilter:
+    "The filter in the toolbar then shows *just the marked games*, in the calendar too.",
+  introMarkedDate:
+    "You can mark games that *have no release date yet*. As soon as IGDB fills one in, the game *shows up in that month's calendar* on its own.",
   introStorage:
     "Marks are stored in this browser only and never sent anywhere. You will not see them on another device, and clearing browser data removes them.",
   introClose: "Got it",
@@ -161,9 +163,9 @@ const en: typeof cs = {
   themeLabel: "Switch light and dark mode",
   metricVisits: "IGDB visits",
   metaDescription:
-    "An overview of upcoming games by release date. The most anticipated titles by month and in a full-year calendar, with developers, platforms and descriptions. Data from IGDB.",
+    "Upcoming games by release date. Mark what you want to play with a heart or a bulb and build your own calendar — a game appears as soon as IGDB adds its date.",
   metaDescriptionPeriod:
-    "{period}: games and release dates. Upcoming titles with developers, platforms and descriptions. Data from IGDB.",
+    "{period}: games and release dates. Mark what you want to play and build your own calendar out of the listing. Data from IGDB.",
 };
 
 export type Lang = "cs" | "en";

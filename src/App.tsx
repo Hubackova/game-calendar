@@ -1068,6 +1068,19 @@ function BulbIcon() {
   );
 }
 
+/**
+ * Zvyrazneni uvnitr prekladu: text mezi `*` se vysadi tucne. Alternativa by
+ * byla rozsekat kazdou vetu na vlastni klice, cimz by se preklad rozpadl na
+ * kusy, ktere prekladatel neumi slozit dohromady.
+ */
+function emphasis(text: string): ReactNode[] {
+  return text
+    .split("*")
+    .map((part, index) =>
+      index % 2 ? <strong key={index}>{part}</strong> : part,
+    );
+}
+
 /** Lupa; stejne jako zarovka jednobarevna, at jde barvit pres `currentColor`. */
 function SearchIcon() {
   return (
@@ -1136,30 +1149,32 @@ function Intro({ open, onClose }: { open: boolean; onClose: () => void }) {
       <h3>{t("introTitle")}</h3>
       <div className="confirm-body">
         <p>{t("introWhat")}</p>
-        <p>{t("introPeriod")}</p>
+        <p>{emphasis(t("introPeriod"))}</p>
 
-        <p>{t("introMarks")}</p>
+        <p>{emphasis(t("introMarks"))}</p>
         <ul className="intro-marks">
-          <li>
+          <li className="intro-mark-fav">
             <span className="mark mark-fav-on" aria-hidden="true">
               ♥
             </span>
-            {t("introFav")}
+            <span>{emphasis(t("introFav"))}</span>
           </li>
-          <li>
+          <li className="intro-mark-int">
             <span className="mark mark-int-on" aria-hidden="true">
               <BulbIcon />
             </span>
-            {t("introInterest")}
+            <span>{emphasis(t("introInterest"))}</span>
           </li>
         </ul>
-        <p>{t("introOneMark")}</p>
-        <p>{t("introSettings")}</p>
+        <p>{emphasis(t("introFilter"))}</p>
+        <p>{emphasis(t("introMarkedDate"))}</p>
         <p className="intro-note">{t("introStorage")}</p>
       </div>
 
       <div className="confirm-actions">
-        <button type="button" className="primary" onClick={onClose}>
+        {/* Bez toho da Chrome fokus scrollovatelnemu telu a nakresli kolem nej
+            ramecek — a Enter by nemel co zavrit. */}
+        <button type="button" className="primary" autoFocus onClick={onClose}>
           {t("introClose")}
         </button>
       </div>

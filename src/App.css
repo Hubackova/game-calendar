@@ -385,6 +385,9 @@
      kde je jeho tlacitko. */
   text-align: left;
   box-shadow: 0 10px 40px rgb(0 0 0 / 0.25);
+  /* UA styl dava `dialog:modal` `overflow: auto`, takze dlouhy obsah delal
+     dva posuvniky na sobe. Scrollovat ma jen telo. */
+  overflow: hidden;
 }
 
 .confirm[open] {
@@ -1185,8 +1188,40 @@
   cursor: default;
 }
 
+/* Zvyraznene fraze nesou vetu — proto vyssi kontrast, ne jen tucne. */
+.intro strong {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+/* Nazvy znacek maji barvu sve ikonky, at je spojeni videt na prvni pohled. */
+.intro-mark-fav strong {
+  color: var(--mark-fav);
+}
+
+.intro-mark-int strong {
+  color: var(--mark-int);
+}
+
 .intro-note {
   opacity: 0.75;
+}
+
+/*
+ * Na uzkem displeji zabira modal celou obrazovku. Okno s ramem a zaoblenim
+ * kolem nem tam nema co delat a odpada druhy posuvnik i ztmavene pozadi,
+ * ktereho je videt jen par pixelu.
+ */
+@media (max-width: 600px) {
+  .confirm,
+  .intro,
+  .game-detail {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
 }
 
 /* Odkaz na uvod stoji nad redakcnimi nastroji, oddeleny linkou. */
@@ -1274,13 +1309,13 @@
 /* Aktivni znacka se lisi barvou, ne jinym znakem — jinak radek poskoci. */
 .mark-fav-on,
 .mark-fav-on:hover {
-  color: #e0577c;
+  color: var(--mark-fav);
   opacity: 1;
 }
 
 .mark-int-on,
 .mark-int-on:hover {
-  color: #d9a326;
+  color: var(--mark-int);
   opacity: 1;
 }
 
