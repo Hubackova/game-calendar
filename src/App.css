@@ -1341,6 +1341,81 @@
 }
 
 /* Pruh hlaseni ma vysku i kdyz je prazdny, aby vypis pod nim neposkakoval. */
+/* Nadpis vlevo, odkazy na sousedni obdobi u praveho kraje vypisu. */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.period-nav {
+  display: flex;
+  gap: 1rem;
+  /* Drzi se vpravo i kdyz nadpis kratky — a po zabaleni zustane na svem radku. */
+  margin-left: auto;
+}
+
+/* Sipka je odkaz, ne tlacitko — da se otevrit v nove zalozce a hlavne po ni
+   projde vyhledavac z jednoho vypisu do druheho. */
+.period-arrow {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.period-arrow:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/*
+ * Nadpis stranky. Zamerne drobny — nese hlavne informaci pro vyhledavac
+ * a pro cloveka jen potvrzuje, co ma zrovna vypsane, takze nema prevalcovat
+ * vypis pod sebou.
+ */
+.page-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-h);
+}
+
+/* Jen prvni pismeno: `capitalize` by z „celý rok 2027“ udelal „Celý Rok“. */
+.page-title::first-letter {
+  text-transform: uppercase;
+}
+
+/* Doplnek nadpisu ustupuje do pozadi, obdobi je to podstatne. */
+.page-title span {
+  font-weight: 400;
+  color: var(--text);
+}
+
+@media (max-width: 34rem) {
+  .period-arrow-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .period-arrow {
+    font-size: 1rem;
+  }
+}
+
 .status {
   min-height: 1.5rem;
   margin: 0 0 0.75rem;

@@ -1901,6 +1901,112 @@ function periodTitle(view: View): string {
   return t("noPeriod");
 }
 
+/** Posledni rok, ktery nabizi vyber obdobi — dal uz odkazy nevedou. */
+const LAST_YEAR = CURRENT_YEAR + 2;
+
+/**
+ * Sousedni obdobi, nebo `null`, kdyz uz je mimo nabizeny rozsah. Mesice se
+ * pocitaji pres `Date`, aby prosinec spravne preskocil do dalsiho roku.
+ */
+function stepPeriod(view: View, delta: -1 | 1): View | null {
+  if (view.kind === "month") {
+    const shifted = new Date(view.year, view.month - 1 + delta);
+    const year = shifted.getFullYear();
+    const month = shifted.getMonth() + 1;
+    if (year < CURRENT_YEAR || year > LAST_YEAR) return null;
+    // V aktualnim roce se do minulosti nechodi, stejne jako ve vyberu obdobi.
+    if (year === CURRENT_YEAR && month < CURRENT_MONTH) return null;
+    return { kind: "month", year, month };
+  }
+  if (view.kind === "year") {
+    const year = view.year + delta;
+    if (year < CURRENT_YEAR || year > LAST_YEAR) return null;
+    return { kind: "year", year };
+  }
+  /* Prurezy zadneho souseda nemaji — nejsou v case. */
+  return null;
+}
+
+/** Popisek sousedniho obdobi: „srpen 2026“ nebo „2027“. */
+const stepLabel = (view: View) =>
+  view.kind === "month"
+    ? `${months()[view.month - 1]} ${view.year}`
+    : String(viewYear(view) ?? "");
+
+/**
+ * Odkazy na sousedni obdobi. Jsou to skutecne `<a href>`, ne tlacitka: krome
+ * toho, ze se daji otevrit v nove zalozce, je to jedine misto, kde se dava
+ * vyhledavaci cesta z jednoho vypisu do druheho.
+ */
+function PeriodArrow({
+  target,
+  direction,
+  asCalendar,
+  onGo,
+}: {
+  target: View;
+  direction: "prev" | "next";
+  asCalendar: boolean;
+  onGo: (view: View) => void;
+}) {
+  const label = stepLabel(target);
+  const title = `${direction === "prev" ? t("prevPeriod") : t("nextPeriod")}: ${label}`;
+
+  return (
+    <a
+      className={`period-arrow period-${direction}`}
+      href={localizedUrl(target, asCalendar, getLang())}
+      title={title}
+      aria-label={title}
+      onClick={(event) => {
+        /* Ctrl/Cmd a prostredni tlacitko maji porad otevrit novou zalozku. */
+        if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+        event.preventDefault();
+        onGo(target);
+      }}
+    >
+      {/* Sipka ukazuje smer, takze u „dalsi“ patri az za popisek. */}
+      {direction === "prev" && <span aria-hidden="true">‹</span>}
+      <span className="period-arrow-label">{label}</span>
+      {direction === "next" && <span aria-hidden="true">›</span>}
+    </a>
+  );
+}
+
+/**
+ * Nadpis stranky. Do `<h1>` patri to, co `<title>` — jen bez znacky, ktera je
+ * vsude stejna. Obdobi drzi prvni pad („Říjen 2026“), protoze skloneni mesicu
+ * by znamenalo dvanact dalsich retezcu v kazdem jazyce.
+ */
+function PageHeading({ view }: { view: View }) {
+  if (view.kind === "search") {
+    return (
+      <h1 className="page-title">
+        {t("headingSearch")}: <span>{view.term}</span>
+      </h1>
+    );
+  }
+
+  /* Prurezy uz maji „hry“ primo v nazvu, pripona by je jen zdvojila. */
+  if (view.kind === "upcoming") {
+    return <h1 className="page-title">{t("headingGames")}</h1>;
+  }
+  if (view.kind === "undated") {
+    return (
+      <h1 className="page-title">
+        {t("headingUndated")}
+        {view.year != null && ` ${view.year}`}
+      </h1>
+    );
+  }
+
+  return (
+    <h1 className="page-title">
+      {periodTitle(view)} <span>— {t("headingGames")}</span>
+    </h1>
+  );
+}
+
 /**
  * Vyber obdobi. Nativni select s optgroupami narval tri roky po trinacti
  * polozkach do jednoho dlouheho svitku; tady jsou roky zalozky a mesice
@@ -2302,6 +2408,9 @@ function App() {
           return markFilter === "fav" ? mark === "fav" : mark !== undefined;
         });
 
+  const prevPeriod = stepPeriod(view, -1);
+  const nextPeriod = stepPeriod(view, 1);
+
   const pageCount = Math.max(1, Math.ceil(shownGames.length / PAGE_SIZE));
   // Po zmene filtru muze byt ulozena stranka mimo rozsah.
   const currentPage = Math.min(page, pageCount);
@@ -2415,6 +2524,31 @@ function App() {
       />
 
       <section className={asCalendar ? "games games-wide" : "games"}>
+        <div className="page-head">
+          <PageHeading view={view} />
+
+          {(prevPeriod || nextPeriod) && (
+            <nav className="period-nav" aria-label={t("periodLabel")}>
+              {prevPeriod && (
+                <PeriodArrow
+                  target={prevPeriod}
+                  direction="prev"
+                  asCalendar={asCalendar}
+                  onGo={setView}
+                />
+              )}
+              {nextPeriod && (
+                <PeriodArrow
+                  target={nextPeriod}
+                  direction="next"
+                  asCalendar={asCalendar}
+                  onGo={setView}
+                />
+              )}
+            </nav>
+          )}
+        </div>
+
         {/* Jeden pruh na vsechna hlaseni — drzi vysku, takze stranka neposkakuje. */}
         <p className="status" role="status" aria-live="polite">
           {loading ? (
