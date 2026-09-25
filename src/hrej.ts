@@ -542,7 +542,8 @@ export type HrejGame = Record<string, unknown> & {
 };
 
 /** Porovnavame kalendarni den, ne cely ISO retezec — hrej neposila milisekundy. */
-const day = (iso?: string | null) => iso?.slice(0, 10) ?? null;
+/** Datum bez casu a pasma — na porovnavani dvou zdroju staci den. */
+export const day = (iso?: string | null) => iso?.slice(0, 10) ?? null;
 
 const ROMAN: Record<string, number> = {
   ii: 2,
@@ -642,6 +643,12 @@ export type DateCheck = {
   game: Game;
   /** Datum, ktere by melo platit podle IGDB. */
   igdbDate: string;
+  /**
+   * Dneska vzdy `false` — obe porovnani berou jen hry s presnym dnem. Jde s
+   * datem proto, aby zapis zustal spravny i kdyby ten filtr nekdo uvolnil:
+   * u „jen rok“ je `igdbDate` 31. 12. a jako skutecny den by lhal.
+   */
+  displayJustReleaseYear: boolean;
   hrej: HrejGame | null;
 };
 
@@ -683,13 +690,18 @@ export async function compareReleaseDates(
 
     batch.forEach((game, index) => {
       const hrej = found[index];
-      const igdbDate = releaseDatePlan(game)?.releaseDate;
+      const plan = releaseDatePlan(game);
       // `undefined` = dotaz selhal, `null` = hrej hru nezna.
-      if (!igdbDate || hrej === undefined) return;
+      if (!plan || hrej === undefined) return;
 
       if (!hrej) missing.push(game);
-      else if (day(hrej.releaseDate) !== day(igdbDate)) {
-        mismatched.push({ game, igdbDate, hrej });
+      else if (day(hrej.releaseDate) !== day(plan.releaseDate)) {
+        mismatched.push({
+          game,
+          igdbDate: plan.releaseDate,
+          displayJustReleaseYear: plan.displayJustReleaseYear,
+          hrej,
+        });
       }
     });
 
@@ -701,17 +713,14 @@ export async function compareReleaseDates(
 }
 
 /**
- * Prepise datum vydani. Posilame cely objekt tak, jak prisel z GET, a k tomu
- * odvozena `*Id` pole — kdyby update DTO cetlo jen ta, nevynulovalo by
- * vyvojare, zanry ani obalku.
+ * Cely objekt tak, jak prisel z GET, a k tomu odvozena `*Id` pole — kdyby
+ * update DTO cetlo jen ta, nevynulovalo by vyvojare, zanry ani obalku.
+ * Seznamovy endpoint vraci plny zaznam, takze zpetny zapis nic neztraci.
  */
-export async function updateReleaseDate(
-  hrej: HrejGame,
-  releaseDate: string,
-): Promise<void> {
+function gameUpdatePayload(hrej: HrejGame) {
   const related = <T>(value: unknown) => (value ?? []) as { id: T }[];
 
-  const payload = {
+  return {
     ...hrej,
     developerId: (hrej.developer as { id: number } | null)?.id ?? null,
     publisherId: (hrej.publisher as { id: number } | null)?.id ?? null,
@@ -719,16 +728,60 @@ export async function updateReleaseDate(
     platformIds: related<number>(hrej.platforms).map((item) => item.id),
     localizationIds: related<number>(hrej.localizations).map((item) => item.id),
     mainImageId: (hrej.mainImage as { id: number } | null)?.id ?? null,
-    releaseDate,
-    displayJustReleaseYear: false,
   };
+}
 
+async function putGame(payload: unknown): Promise<void> {
   const response = await fetch("/api/hrej/games", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   await unwrap(response);
+}
+
+/** Prepise datum vydani uz existujiciho zaznamu. */
+export async function updateReleaseDate(
+  hrej: HrejGame,
+  releaseDate: string,
+  /** U her, kde IGDB zna jen rok, je datum 31. 12. jen zastupne. */
+  displayJustReleaseYear = false,
+): Promise<void> {
+  await putGame({
+    ...gameUpdatePayload(hrej),
+    releaseDate,
+    displayJustReleaseYear,
+  });
+}
+
+/**
+ * Nahraje obalku a rovnou ji nastavi uz existujici hre jako hlavni obrazek.
+ * Tri kroky za sebou, takze chyba v prostrednim znamena nahrany obrazek, ke
+ * kteremu se nikdo nedostane — hlaska proto nese jeho id.
+ */
+export async function attachCoverToGame(
+  game: Game,
+  hrej: HrejGame,
+  blob: Blob,
+): Promise<void> {
+  const imageId = await uploadCover(game, blob);
+
+  try {
+    await putGame({ ...gameUpdatePayload(hrej), mainImageId: imageId });
+  } catch (error) {
+    throw new Error(
+      `Obálka se nahrála (id ${imageId}), ale nešlo ji nastavit hře: ${(error as Error).message}`,
+    );
+  }
+
+  try {
+    await attachGameToImage(imageId, hrej.id, coverName(game));
+  } catch (error) {
+    // Obalka uz u hry je, chybi jen vazba zpet — hru to nerozbije.
+    throw new Error(
+      `Obálka je u hry nastavená, ale nemá zpětnou vazbu: ${(error as Error).message}`,
+    );
+  }
 }
 
 export type CreatedGame = {
@@ -944,13 +997,18 @@ export async function compareHrejCalendar(
       });
       // Vic stejnojmennych chystanych her nerozhodneme, radeji nechame byt.
       const match = candidates.length === 1 ? candidates[0] : undefined;
-      const igdbDate = match ? releaseDatePlan(match)?.releaseDate : undefined;
-      if (!match || !igdbDate) {
+      const plan = match ? releaseDatePlan(match) : undefined;
+      if (!match || !plan) {
         unmatched += 1;
         return;
       }
-      if (day(igdbDate) !== day(hrej.releaseDate)) {
-        mismatched.push({ game: match, igdbDate, hrej });
+      if (day(plan.releaseDate) !== day(hrej.releaseDate)) {
+        mismatched.push({
+          game: match,
+          igdbDate: plan.releaseDate,
+          displayJustReleaseYear: plan.displayJustReleaseYear,
+          hrej,
+        });
       }
     });
 

@@ -37,11 +37,8 @@ import {
 } from "./url";
 import { countPageview } from "./analytics";
 import {
-  HREJ_COVER_HEIGHT,
-  HREJ_COVER_WIDTH,
   compareHrejCalendar,
   compareReleaseDates,
-  coverName,
   createCompany,
   searchCompanies,
   createGame,
@@ -51,8 +48,9 @@ import {
   searchHrejGamesByTitle,
   searchGamesByTitle,
   renderCover,
+  attachCoverToGame,
+  day,
   updateReleaseDate,
-  uploadCover,
   type DateCheck,
   type ExistingCheck,
   type GamePlan,
@@ -81,6 +79,48 @@ const coverUrl = (imageId: string, size: keyof typeof COVER_SIZES = "detail") =>
   `https://images.igdb.com/igdb/image/upload/${COVER_SIZES[size]}/${imageId}.jpg`;
 
 /**
+ * Hra bez obalky na IGDB. Drzi stejny pomer stran 3 / 4 jako obrazek, aby
+ * mrizka kalendare ani seznam karet nepreskakovaly.
+ */
+function CoverPlaceholder({
+  name,
+  width,
+  className,
+}: {
+  name: string;
+  width: number;
+  /** Aby placeholder dedil stejne zaobleni a stin jako `img` vedle nej. */
+  className?: string;
+}) {
+  return (
+    <div
+      className={
+        className ? `cover-placeholder ${className}` : "cover-placeholder"
+      }
+      style={{ width }}
+      title={name}
+      aria-label={name}
+      role="img"
+    >
+      <svg
+        className="cover-placeholder-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M8.5 7.5h7a5.5 5.5 0 0 1 5.4 4.5l.8 4.3a2.6 2.6 0 0 1-4.7 2l-1.4-2H8.4l-1.4 2a2.6 2.6 0 0 1-4.7-2l.8-4.3a5.5 5.5 0 0 1 5.4-4.5Z" />
+        <path d="M7.2 11.4v2.4M6 12.6h2.4" />
+        <path d="M15.6 11.6h.01M17.8 13.4h.01" />
+      </svg>
+    </div>
+  );
+}
+
+/**
  * Datum vypisujeme jen tak presne, jak ho IGDB zna. U ctvrtletnich vydani je
  * timestamp posledni den kvartalu, takze bez `date_format` by z „Q1 2027“
  * vzniklo zavadejici „31. 3. 2027“.
@@ -96,6 +136,34 @@ const releaseDate = (game: Game) => {
   if (precision === 2) return String(date.getFullYear());
   if (precision === 1) return formatMonthYear(date);
   return formatDay(date);
+};
+
+/**
+ * Datum z payloadu pro Hrej lidsky. Redakcni nastroje jsou cesky, proto
+ * natvrdo `cs-CZ`, a casove pasmo Prahy, aby se den neposunul — payload nese
+ * pulnoc v prazskem case.
+ */
+const hrejDateLabel = (plan: {
+  releaseDate: string | null;
+  displayJustReleaseYear: boolean;
+}) => {
+  if (!plan.releaseDate) return "IGDB datum neuvádí";
+
+  const date = new Date(plan.releaseDate);
+  /* U nepresneho data posilame 31. 12., vypsat ho jako den by ale redakci
+     matlo — hra v ten den nevychazi, je to jen zastupna hodnota. */
+  if (plan.displayJustReleaseYear) {
+    const year = new Intl.DateTimeFormat("cs-CZ", {
+      year: "numeric",
+      timeZone: "Europe/Prague",
+    }).format(date);
+    return `jen rok ${year} (uloží se jako 31. 12.)`;
+  }
+
+  return new Intl.DateTimeFormat("cs-CZ", {
+    dateStyle: "long",
+    timeZone: "Europe/Prague",
+  }).format(date);
 };
 
 /** Radek detailu; prazdne hodnoty se nevykresli, aby karta nebyla plna pomlcek. */
@@ -370,94 +438,139 @@ function useCoverPreview() {
   };
 }
 
-const coverSize = `${HREJ_COVER_WIDTH}×${HREJ_COVER_HEIGHT}`;
-
 /**
- * Nahrani samotne obalky. Pred odeslanim ukazeme presne ten JPEG, ktery pujde
- * nahoru — upload zaklada zaznam v cizim CMS, takze chceme potvrzeni.
+ * Nahrani samotne obalky primo ze zakladaciho modalu. Ma smysl hlavne tehdy,
+ * kdyz uz hra na Hrej je (viz `ExistsBanner`) — zalozit ji znovu nechceme,
+ * ale obalka muze chybet. Pri zalozeni hry se obalka nahrava sama, tohle je
+ * samostatny krok navic.
  */
-function UploadCoverButton({ game }: { game: Game }) {
-  const [state, setState] = useState<
-    "idle" | "preparing" | "confirm" | "uploading" | "done" | "failed"
-  >("idle");
-  const [message, setMessage] = useState<string | null>(null);
-  const { preview, show, clear } = useCoverPreview();
-  const open = state === "confirm" || state === "uploading";
-  if (!game.cover) return null;
+function UploadOnlyButton({
+  game,
+  hrej,
+  blob,
+  onError,
+}: {
+  game: Game;
+  /** Zaznam na Hrej, kteremu se obalka nastavi jako hlavni obrazek. */
+  hrej: HrejGame;
+  blob: Blob;
+  onError: (message: string) => void;
+}) {
+  const [state, setState] = useState<"idle" | "confirm" | "uploading" | "done">(
+    "idle",
+  );
 
-  const close = () => {
-    clear();
-    setState("idle");
+  /*
+   * Natazeny stav se sam po chvili povoli. Upload zaklada zaznam v cizim CMS
+   * a nejde vzit zpet — tlacitko cekajici na potvrzeni donekonecna by driv ci
+   * pozdeji odchytlo kliknuti, ktere mu nepatri.
+   */
+  useEffect(() => {
+    if (state !== "confirm") return;
+    const timer = setTimeout(() => setState("idle"), 4000);
+    return () => clearTimeout(timer);
+  }, [state]);
+
+  const upload = () => {
+    setState("uploading");
+    onError("");
+    attachCoverToGame(game, hrej, blob)
+      .then(() => setState("done"))
+      .catch((err: Error) => {
+        console.error(err);
+        onError(err.message);
+        setState("idle");
+      });
   };
 
   return (
-    <>
-      <button
-        type="button"
-        className="cover-action"
-        disabled={state === "preparing" || open}
-        title={message ?? `Nahrát obálku na Hrej (${coverSize} JPEG)`}
-        aria-label={`Nahrát obálku na Hrej: ${game.name}, ${coverSize}`}
-        onClick={() => {
-          setState("preparing");
-          setMessage(null);
-          renderCover(game)
-            .then((blob) => {
-              show(blob);
-              setState("confirm");
-            })
-            .catch((err: Error) => {
-              console.error(err);
-              setMessage(err.message);
-              setState("failed");
-            });
-        }}
-      >
-        {state === "preparing"
-          ? "…"
-          : state === "failed"
-            ? "!"
-            : state === "done"
-              ? "✓"
-              : "↑"}
-      </button>
+    <button
+      type="button"
+      className={
+        state === "confirm"
+          ? "inline-add cover-upload cover-upload-armed"
+          : "inline-add cover-upload"
+      }
+      disabled={state === "uploading" || state === "done"}
+      onClick={() => (state === "confirm" ? upload() : setState("confirm"))}
+    >
+      {state === "confirm"
+        ? "Opravdu nastavit?"
+        : state === "uploading"
+          ? "Nahrávám…"
+          : state === "done"
+            ? "Obálka nastavena ✓"
+            : "Nahrát obálku k této hře"}
+    </button>
+  );
+}
 
-      <ConfirmDialog
-        open={open}
-        heading="Nahrát obálku na Hrej?"
-        busy={state === "uploading"}
-        confirmLabel={state === "uploading" ? "Nahrávám…" : "Nahrát"}
-        onCancel={close}
-        onConfirm={() => {
-          if (!preview) return;
-          setState("uploading");
-          uploadCover(game, preview.blob)
-            .then(() => {
-              clear();
-              setState("done");
-            })
-            .catch((err: Error) => {
-              console.error(err);
-              setMessage(err.message);
-              clear();
-              setState("failed");
-            });
-        }}
-      >
-        {preview && <img src={preview.url} alt="" width={160} />}
-        <dl className="details">
-          <Detail label="Hra" value={game.name} />
-          <Detail label="Title" value={coverName(game)} />
-          <Detail label="Rozměr" value={`${coverSize} JPEG`} />
-          <Detail
-            label="Velikost"
-            value={
-              preview ? `${Math.round(preview.blob.size / 1024)} kB` : undefined
-            }
-          />
-          <Detail label="Varianty" value="forceGenerateVariants: true" />
-        </dl>
-      </ConfirmDialog>
+/**
+ * Radek s datem vydani. Kdyz hra na Hrej uz je a ma tam jine datum, nema smysl
+ * ukazovat jen to spravne z IGDB — clovek by musel odejit do porovnavaciho
+ * nastroje. Krizek proto rovnou rekne, ze se to rozchazi, a nabidne opravu.
+ */
+function ReleaseDateRow({ plan }: { plan: GamePlan }) {
+  const [state, setState] = useState<"idle" | "saving" | "failed">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const [fixed, setFixed] = useState(false);
+
+  const hrej = plan.existing.exact;
+  const igdbDate = plan.payload.releaseDate;
+  const differs =
+    hrej != null &&
+    igdbDate != null &&
+    day(hrej.releaseDate) !== day(igdbDate) &&
+    !fixed;
+
+  return (
+    <>
+      <dt>Datum vydání</dt>
+      <dd>
+        {hrejDateLabel(plan.payload)}
+        {differs && (
+          <span className="date-check date-bad">
+            ✕ na Hrej je{" "}
+            {hrejDateLabel({
+              releaseDate: hrej.releaseDate ?? null,
+              displayJustReleaseYear: false,
+            })}
+            <button
+              type="button"
+              className="inline-add"
+              disabled={state === "saving"}
+              onClick={() => {
+                setState("saving");
+                setMessage(null);
+                updateReleaseDate(
+                  hrej,
+                  igdbDate,
+                  plan.payload.displayJustReleaseYear,
+                )
+                  .then(() => {
+                    setFixed(true);
+                    setState("idle");
+                  })
+                  .catch((err: Error) => {
+                    console.error(err);
+                    setMessage(err.message);
+                    setState("failed");
+                  });
+              }}
+            >
+              {state === "saving"
+                ? "Ukládám…"
+                : state === "failed"
+                  ? "Zkusit znovu"
+                  : "Opravit na Hrej"}
+            </button>
+          </span>
+        )}
+        {fixed && (
+          <span className="date-check date-ok">✓ opraveno na Hrej</span>
+        )}
+        {message && <span className="error"> · {message}</span>}
+      </dd>
     </>
   );
 }
@@ -525,11 +638,7 @@ function NewGameButton({ game }: { game: Game }) {
         type="button"
         className="cover-action"
         disabled={state === "preparing" || open}
-        title={
-          message ??
-          created ??
-          "Založit hru na Hrej (nahraje obálku a vytvoří záznam)"
-        }
+        title={message ?? created ?? "Založit / upravit hru na Hrej"}
         aria-label={`Založit hru na Hrej: ${game.name}`}
         onClick={() => {
           setState("preparing");
@@ -598,18 +707,31 @@ function NewGameButton({ game }: { game: Game }) {
             });
         }}
       >
-        {/* Nahore, at je videt driv nez cokoli dalsiho. */}
         {plan && <ExistsBanner existing={plan.existing} />}
-        {preview && <img src={preview.url} alt="" width={130} />}
+        {preview && (
+          <div className="cover-preview">
+            <img src={preview.url} alt="" width={130} />
+            {/* Kdyz hra teprve vznika, nahraje se obalka sama pri zalozeni —
+                tlacitko by svadelo k tomu nahrat ji na Hrej dvakrat. */}
+            {plan?.existing.exact && (
+              <UploadOnlyButton
+                game={game}
+                hrej={plan.existing.exact}
+                blob={preview.blob}
+                onError={(text) => setMessage(text || null)}
+              />
+            )}
+          </div>
+        )}
         {plan && (
           <dl className="details">
-            <Detail label="title" value={plan.payload.title} />
+            <Detail label="Název" value={plan.payload.title} />
             <Detail
-              label="platformIds"
+              label="Platformy"
               value={plan.platforms.map((found) => refLabel(found)).join(", ")}
             />
             <CompanyRow
-              label="developerId"
+              label="Vývojář"
               role="developer"
               found={plan.developer}
               chosen={developer}
@@ -617,7 +739,7 @@ function NewGameButton({ game }: { game: Game }) {
               onError={setMessage}
             />
             <CompanyRow
-              label="publisherId"
+              label="Vydavatel"
               role="publisher"
               found={plan.publisher}
               chosen={publisher}
@@ -625,32 +747,25 @@ function NewGameButton({ game }: { game: Game }) {
               onError={setMessage}
             />
             <Detail
-              label="IGDB žánry"
-              value={game.genres.length ? game.genres : "žádné"}
-            />
-            <Detail
-              label="pegiRating"
+              label="PEGI"
               value={
                 plan.payload.pegiRating == null
-                  ? "null (IGDB neuvádí)"
+                  ? "IGDB neuvádí"
                   : String(plan.payload.pegiRating)
               }
             />
-            <Detail
-              label="releaseDate"
-              value={plan.payload.releaseDate ?? "null"}
-            />
-            <Detail
-              label="displayJustReleaseYear"
-              value={String(plan.payload.displayJustReleaseYear)}
-            />
-            <Detail label="mainImageId" value={`z obálky ${coverName(game)}`} />
+            {/* Datum a „jen rok“ jsou jedna informace, ve dvou radcich se
+                musely v hlave skladat dohromady. */}
+            <ReleaseDateRow plan={plan} />
           </dl>
         )}
 
         <div className="game-type">
           <span className="field-label">
-            type {game.game_type && <>— IGDB uvádí „{game.game_type}“</>}
+            Typ záznamu{" "}
+            {game.game_type && (
+              <span className="hint">— IGDB uvádí „{game.game_type}“</span>
+            )}
           </span>
           <select
             value={gameType}
@@ -667,7 +782,8 @@ function NewGameButton({ game }: { game: Game }) {
           {gameType === "DLC" && (
             <div className="parent-search">
               <span className="field-label">
-                parentGameId — vyber rodičovskou hru z databáze Hrej
+                Rodičovská hra{" "}
+                <span className="hint">— vyber ji z databáze Hrej</span>
               </span>
               {parent ? (
                 <ul className="chips">
@@ -733,7 +849,10 @@ function NewGameButton({ game }: { game: Game }) {
         {plan && (
           <div className="genres">
             <span className="field-label">
-              genreIds — namapované z IGDB, uprav podle potřeby
+              Žánry na Hrej{" "}
+              <span className="hint">
+                — namapované z IGDB, uprav podle potřeby
+              </span>
             </span>
             <ul className="chips">
               {genres.map((genre) => (
@@ -778,8 +897,7 @@ function NewGameButton({ game }: { game: Game }) {
 
         <label className="description">
           <span className="field-label">
-            text.cs — nepovinné, prázdné pole pošle jen{" "}
-            <code>{"text: {}"}</code>{" "}
+            Popis:{" "}
             <button
               type="button"
               className="inline-add"
@@ -842,7 +960,7 @@ function CalendarEntry({
           />
         ) : (
           // Bez obalky by policko zustalo prazdne, tady nazev smysl ma.
-          <span className="cal-noimg">{game.name}</span>
+          <CoverPlaceholder name={game.name} width={76} className="cal-cover" />
         )}
       </button>
     </li>
@@ -879,16 +997,25 @@ function GameDialog({
             onMark={(next) => onMark(game.id, next)}
           />
         )}
+        {/* Zakladaci modal se otevre nad timhle — dialogy se v top layeru
+            vrstvi, takze detail hry pod nim zustane otevreny. */}
+        {EDITOR_TOOLS && game && <NewGameButton game={game} />}
       </h3>
       <div className="confirm-body">
         {game && (
           <div className="detail-body">
-            {game.cover && (
+            {game.cover ? (
               <img
                 src={coverUrl(game.cover.image_id, "detail")}
                 alt=""
                 width={200}
                 height={283}
+              />
+            ) : (
+              <CoverPlaceholder
+                name={game.name}
+                width={200}
+                className="detail-cover"
               />
             )}
             <div className="detail-text">
@@ -1451,7 +1578,11 @@ function MismatchRow({ check }: { check: DateCheck }) {
           if (!check.hrej) return;
           setState("saving");
           setMessage(null);
-          updateReleaseDate(check.hrej, check.igdbDate)
+          updateReleaseDate(
+            check.hrej,
+            check.igdbDate,
+            check.displayJustReleaseYear,
+          )
             .then(() => {
               setSavedDate(igdbDate);
               setState("done");
@@ -2102,15 +2233,16 @@ function PeriodPicker({
           </div>
 
           <div className="picker-group">
-            <div className="picker-rows">
-              {option(String(tab), `${t("wholeYear")} ${tab}`)}
-            </div>
             {/* V aktualnim roce nenabizime mesice, ktere uz probehly. */}
             <div className="picker-months">
               {months()
                 .map((_, index) => index + 1)
                 .filter((month) => tab > CURRENT_YEAR || month >= CURRENT_MONTH)
                 .map((month) => option(`${tab}-${month}`, months()[month - 1]))}
+            </div>
+
+            <div className="picker-rows">
+              {option(String(tab), `${t("wholeYear")} ${tab}`)}
             </div>
             <div className="picker-rows">
               {option(`${tab}-undated`, t("undated"))}
@@ -2576,12 +2708,18 @@ function App() {
           <ul className="game-list">
             {pageGames.map((game) => (
               <li key={game.id} className="game">
-                {game.cover && (
+                {game.cover ? (
                   <img
                     src={coverUrl(game.cover.image_id, "card")}
                     alt={game.name}
                     width={180}
                     loading="lazy"
+                  />
+                ) : (
+                  <CoverPlaceholder
+                    name={game.name}
+                    width={180}
+                    className="card-cover"
                   />
                 )}
                 <div className="game-body">
@@ -2598,12 +2736,7 @@ function App() {
                       mark={marks.get(game.id)}
                       onMark={(next) => setMark(game.id, next)}
                     />
-                    {EDITOR_TOOLS && (
-                      <>
-                        <UploadCoverButton game={game} />
-                        <NewGameButton game={game} />
-                      </>
-                    )}
+                    {EDITOR_TOOLS && <NewGameButton game={game} />}
                   </h2>
 
                   <p className="meta">

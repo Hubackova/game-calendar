@@ -347,6 +347,14 @@ export function createIgdbApi(clientId: string, clientSecret: string) {
     const placements = await popularityPlacements(ids, perMetric);
     placements.forEach((list, id) => selected.set(id, list));
 
+    /*
+     * Ve vzdalenych mesicich se stava, ze zadna hra nema `hypes` ani misto v
+     * zebricku. Bez teto pojistky by dotaz nize vysel jako `where id = ();`,
+     * coz IGDB odmitne se syntaktickou chybou a cely vypis skonci chybou
+     * misto prazdneho seznamu.
+     */
+    if (!selected.size) return [];
+
     /** Nejlepsi umisteni napric metrikami — radi hry, ktere nemaji hypes. */
     const bestRank = (id: number) =>
       Math.min(

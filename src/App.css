@@ -37,6 +37,12 @@
   --info-text: #aec4f2;
 }
 .games {
+  /*
+   * `width` musi byt, i kdyz uz je tu `max-width`: `#root` je sloupcovy flex
+   * a `margin: 0 auto` v nem rusi roztazeni na sirku rodice, takze bez teho
+   * urcuje sirku obsah — prazdny vypis pak smrskl i hlavicku nad nim.
+   */
+  width: 100%;
   max-width: 720px;
   margin: 0 auto;
   padding: 2rem 1rem;
@@ -191,7 +197,7 @@
 
 .game-type select {
   padding: 0.35rem 0.5rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font: inherit;
 }
@@ -204,14 +210,14 @@
 .parent-input input {
   flex: 1;
   padding: 0.4rem 0.6rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font: inherit;
 }
 
 .parent-input button {
   padding: 0.4rem 0.8rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--code-bg);
   color: var(--text-h);
@@ -288,7 +294,7 @@
 
 .genres select {
   padding: 0.35rem 0.5rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font: inherit;
 }
@@ -296,7 +302,7 @@
 .description textarea {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font: inherit;
   resize: vertical;
@@ -304,7 +310,7 @@
 
 .confirm-actions button {
   padding: 0.45rem 1rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--code-bg);
   color: var(--text-h);
@@ -434,8 +440,85 @@
   border-radius: 6px;
 }
 
+/* Nahled a tlacitko pod nim drzi pohromade, plave jako jeden blok vpravo. */
+.cover-preview {
+  float: right;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 130px;
+  margin: 0 0 0.5rem 1rem;
+}
+
+.cover-preview img {
+  float: none;
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+/* Sirka nahledu, at je videt, ze tlacitko patri k obalce nad nim. */
+.cover-upload {
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  text-align: center;
+}
+
+/* Hlaska u data vydani; na uzkem miste se zabali pod nej. */
+.date-check {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-left: 0.5rem;
+}
+
+.date-bad {
+  color: var(--bad-text);
+}
+
+.date-ok {
+  color: var(--ok-text);
+}
+
+/* Natazene tlacitko — dalsi kliknuti uz odesila, at je to videt. */
+.cover-upload-armed,
+.cover-upload-armed:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/*
+ * V dialogu je to prehled toho, co se posle na Hrej — clovek ho cte, nez
+ * klikne. Radky proto dostanou vzduch a hodnota vyssi kontrast nez popisek,
+ * aby se dala prejet ocima svisle.
+ */
 .confirm .details {
   margin: 0;
+  gap: 0.4rem 1.25rem;
+  font-size: 0.9rem;
+}
+
+.confirm .details dt {
+  opacity: 1;
+  color: var(--text);
+}
+
+.confirm .details dd {
+  color: var(--text-h);
+}
+
+/* Popisek sekce vede, upresneni v zavorce ustupuje. */
+.confirm .field-label {
+  opacity: 1;
+  color: var(--text-h);
+  font-weight: 500;
+}
+
+.confirm .field-label .hint {
+  color: var(--text);
+  font-weight: 400;
 }
 
 .description,
@@ -624,6 +707,20 @@
   flex-direction: column;
 }
 
+/*
+ * Obsah vybraneho roku patri k zalozkam nad nim, proto uvnitr te sekce zadna
+ * plna linka — „cely rok“, mesice a „bez data“ deli carkovane.
+ */
+.picker-group:last-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.picker-group:last-child .picker-rows {
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+}
+
 .picker-months {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -699,6 +796,7 @@
 .exists-found {
   background: var(--bad-bg);
   color: var(--bad-text);
+  margin-bottom: 0.6rem;
 }
 
 .exists-similar {
@@ -1017,16 +1115,39 @@
   outline-offset: 1px;
 }
 
-/* Hra bez obalky by byla neviditelna, tam nazev nechavame. */
-.cal-noimg {
-  display: inline-block;
-  max-width: 5rem;
-  padding: 0.15rem 0.3rem;
-  border-radius: 4px;
+/* Nahrada obalky pro hry, ktere na IGDB obrazek nemaji. */
+.cover-placeholder {
+  box-sizing: border-box;
+  aspect-ratio: 3 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   background: var(--code-bg);
   color: var(--text-h);
-  font-size: 0.75em;
-  line-height: 1.25;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.cover-placeholder-icon {
+  width: 40%;
+  height: auto;
+  opacity: 0.45;
+}
+
+.cover-placeholder.cal-cover {
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+.cover-placeholder.cal-cover:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cover-placeholder.detail-cover {
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
 }
 
 .cal-loose {
@@ -1124,11 +1245,6 @@
     /* Sirka z atributu se prebiji tady, vysku dopocita pomer stran. */
     width: 44px;
     height: auto;
-  }
-
-  .cal-noimg {
-    max-width: 100%;
-    font-size: 0.7em;
   }
 
   /* V detailu se text vejde jen pod obrazek. */
