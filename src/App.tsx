@@ -28,6 +28,14 @@ import {
 } from "./i18n";
 import { fetchGamesByIds } from "./igdb";
 import {
+  GAMEPAD_PATHS,
+  GAMEPAD_STROKE,
+  GAMEPAD_VIEWBOX,
+  coverUrl,
+  dayOfMonth,
+} from "./game";
+import { exportMonthPng } from "./export";
+import {
   CURRENT_MONTH,
   CURRENT_YEAR,
   localizedUrl,
@@ -61,24 +69,6 @@ import {
 } from "./hrej";
 
 /**
- * Obal ve velikosti, ktera odpovida miste zobrazeni. IGDB dava kazdou obalku
- * v nekolika variantach a `cover_big_2x` (528 × 748) je pro policko kalendare
- * o sirce 76 px sedmkrat vetsi, nez je potreba — v mesici se ctyriceti hrami
- * to byly megabajty pro nic.
- */
-const COVER_SIZES = {
-  /** 180 × 256 — policko kalendare (76 px, tedy 152 px na retine). */
-  cell: "t_cover_small_2x",
-  /** 264 × 374 — karta v seznamu (180 px). */
-  card: "t_cover_big",
-  /** 528 × 748 — detail hry, jeden obrazek na obrazovku. */
-  detail: "t_cover_big_2x",
-} as const;
-
-const coverUrl = (imageId: string, size: keyof typeof COVER_SIZES = "detail") =>
-  `https://images.igdb.com/igdb/image/upload/${COVER_SIZES[size]}/${imageId}.jpg`;
-
-/**
  * Hra bez obalky na IGDB. Drzi stejny pomer stran 3 / 4 jako obrazek, aby
  * mrizka kalendare ani seznam karet nepreskakovaly.
  */
@@ -104,17 +94,17 @@ function CoverPlaceholder({
     >
       <svg
         className="cover-placeholder-icon"
-        viewBox="0 0 24 24"
+        viewBox={`0 0 ${GAMEPAD_VIEWBOX} ${GAMEPAD_VIEWBOX}`}
         fill="none"
         stroke="currentColor"
-        strokeWidth={1.5}
+        strokeWidth={GAMEPAD_STROKE}
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden="true"
       >
-        <path d="M8.5 7.5h7a5.5 5.5 0 0 1 5.4 4.5l.8 4.3a2.6 2.6 0 0 1-4.7 2l-1.4-2H8.4l-1.4 2a2.6 2.6 0 0 1-4.7-2l.8-4.3a5.5 5.5 0 0 1 5.4-4.5Z" />
-        <path d="M7.2 11.4v2.4M6 12.6h2.4" />
-        <path d="M15.6 11.6h.01M17.8 13.4h.01" />
+        {GAMEPAD_PATHS.map((path) => (
+          <path key={path} d={path} />
+        ))}
       </svg>
     </div>
   );
@@ -930,11 +920,6 @@ function NewGameButton({ game }: { game: Game }) {
 }
 
 /** Den v mesici, na ktery hra pripada; jen u presneho data. */
-const dayOfMonth = (game: Game) =>
-  game.date_format === 0 && game.first_release_date != null
-    ? new Date(game.first_release_date * 1000).getUTCDate()
-    : null;
-
 /** Jedna hra v policku kalendare — jen obalka, nazev je v tooltipu. */
 function CalendarEntry({
   game,
@@ -954,6 +939,9 @@ function CalendarEntry({
         {game.cover ? (
           <img
             src={coverUrl(game.cover.image_id, "cell")}
+            /* Bez CORS by export do PNG otravil platno; navic by si prohlizec
+               drzel druhou cache, kdyby atribut pribyl az pri exportu. */
+            crossOrigin="anonymous"
             alt={game.name}
             width={76}
             loading="lazy"
@@ -1007,6 +995,7 @@ function GameDialog({
             {game.cover ? (
               <img
                 src={coverUrl(game.cover.image_id, "detail")}
+                crossOrigin="anonymous"
                 alt=""
                 width={200}
                 height={283}
@@ -2138,6 +2127,69 @@ function PageHeading({ view }: { view: View }) {
   );
 }
 
+/** Ikona stazeni; jako SVG, at ji lze barvit pres `currentColor`. */
+function DownloadIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="1em"
+      height="1em"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 4v11m0 0 4-4m-4 4-4-4" />
+      <path d="M5 18h14" />
+    </svg>
+  );
+}
+
+/**
+ * Stazeni mesice jako PNG. Jen u mesicu — obrazek dava dni do rohu obalky a
+ * u roku ani prurezu by nebylo z ceho ho vzit. Kresleni bezi v hlavnim vlakne,
+ * takze tlacitko po dobu prace hlasi stav a je zamcene.
+ */
+function ExportButton({ games, view }: { games: Game[]; view: View }) {
+  const [state, setState] = useState<"idle" | "running" | "failed">("idle");
+
+  if (view.kind !== "month" || games.length === 0) return null;
+
+  const label = state === "running" ? t("exportRunning") : t("exportImage");
+
+  return (
+    <button
+      type="button"
+      className="export-button"
+      disabled={state === "running"}
+      title={state === "failed" ? t("exportFailed") : label}
+      onClick={() => {
+        setState("running");
+        exportMonthPng({
+          games,
+          title: periodTitle(view),
+          subtitle: t("headingGames"),
+          looseLabel: t("looseGames"),
+          year: view.year,
+          month: view.month,
+        })
+          .then(() => setState("idle"))
+          .catch((error: Error) => {
+            console.error(error);
+            setState("failed");
+          });
+      }}
+    >
+      <DownloadIcon />
+      <span className="export-label">
+        {state === "failed" ? t("exportFailed") : label}
+      </span>
+    </button>
+  );
+}
+
 /**
  * Vyber obdobi. Nativni select s optgroupami narval tri roky po trinacti
  * polozkach do jednoho dlouheho svitku; tady jsou roky zalozky a mesice
@@ -2659,6 +2711,26 @@ function App() {
         <div className="page-head">
           <PageHeading view={view} />
 
+          <ExportButton games={shownGames} view={view} />
+
+          {/* Hlaseni sedi v radku nadpisu, aby si nebrala vlastni pasek. Prvek
+              je tu porad, i prazdny — `aria-live` ohlasuje jen zmeny uvnitr
+              oblasti, ktera v DOM uz byla, takze podminene vykresleni by
+              cteckam zmeny zamlcelo. */}
+          <p className="status" role="status" aria-live="polite">
+            {loading ? (
+              t("loading")
+            ) : error ? (
+              <span className="error">{error}</span>
+            ) : games.length === 0 ? (
+              t("nothingFound")
+            ) : shownGames.length === 0 && markFilter !== "all" ? (
+              t("noMarked")
+            ) : (
+              ""
+            )}
+          </p>
+
           {(prevPeriod || nextPeriod) && (
             <nav className="period-nav" aria-label={t("periodLabel")}>
               {prevPeriod && (
@@ -2681,21 +2753,6 @@ function App() {
           )}
         </div>
 
-        {/* Jeden pruh na vsechna hlaseni — drzi vysku, takze stranka neposkakuje. */}
-        <p className="status" role="status" aria-live="polite">
-          {loading ? (
-            t("loading")
-          ) : error ? (
-            <span className="error">{error}</span>
-          ) : games.length === 0 ? (
-            t("nothingFound")
-          ) : shownGames.length === 0 && markFilter !== "all" ? (
-            t("noMarked")
-          ) : (
-            ""
-          )}
-        </p>
-
         {asCalendar && (view.kind === "month" || view.kind === "year") ? (
           <CalendarView
             games={shownGames}
@@ -2711,6 +2768,7 @@ function App() {
                 {game.cover ? (
                   <img
                     src={coverUrl(game.cover.image_id, "card")}
+                    crossOrigin="anonymous"
                     alt={game.name}
                     width={180}
                     loading="lazy"
